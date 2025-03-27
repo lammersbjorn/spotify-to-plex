@@ -1,57 +1,179 @@
-# Spotify To Plex (Spotiplex)
-## Currently, the Spotify API does NOT allow API access to Spotify generated playlists, including Daily Mix, Discover Weekly, or any other playlist owned + created by Spotify. Please see [here](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api) for more details. There is nothing I can do about this functionality change, and it was abrupt and unexpected. Playlists created by users are still fully available for now. 
-[![Docker Build](https://github.com/cmathews393/spotify-to-plex/actions/workflows/docker-image.yml/badge.svg)](https://github.com/cmathews393/spotify-to-plex/actions/workflows/docker-image.yml)
-## Table of Contents
+# Spotify to Plex
 
-- [How To](#how-to)
-- [Dependencies](#dependencies)
-- [Upcoming Planned Features](#upcoming-planned-features)
-- [Known Issues](#known-issues)
-- [Disclaimer](#disclaimer)
+[![Docker Build](https://github.com/lammersbjorn/spotify-to-plex/actions/workflows/docker-image.yml/badge.svg)](https://github.com/lammersbjorn/spotify-to-plex/actions/workflows/docker-image.yml)
 
-**Note:** Undergoing rewrite to improve performance and fix various inherent bugs in current implementation. Check Bluesky for updates. Will release beta when it's in a testable state. 
+Synchronize Spotify playlists to your Plex Media Server automatically.
 
-## How To
+> **Important Notice:** As of November 27, 2024, Spotify API no longer allows access to Spotify-generated playlists, including Daily Mix, Discover Weekly, and other Spotify-owned content. See [Spotify's announcement](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api) for details. User-created playlists remain fully accessible.
 
-### Prerequisites
+## Features
 
-1. Ensure you have Python 3 installed (if not running docker)
-2. Ensure you have poetry installed
-3. Ensure you have a Spotify api key [from here](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
+- Sync Spotify playlists to Plex for multiple users
+- Import playlists from Lidarr or specify them manually
+- Preserve Spotify playlist cover art
+- Scheduled automatic synchronization
+- Parallel processing for improved performance
+- Docker support for easy deployment
 
-### Setup (Script Version)
+## Installation
 
-1. Clone the repo.
-2. Configure settings for your environment:
-   - Get Plex API key.
-   - Get Spotify ID and API key.
-   - Get Lidarr API key.
-3. Run with poetry (`cd spotiplex && poetry install`, `poetry run spotiplex --help`)
-4. Follow CLI prompts
+### Docker (Recommended)
 
-### Setup (Docker Version)
+```bash
+# Pull the latest image
+docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
 
-Note: Tested only on Linux, Docker version 24.0.5. Other environments are "unsupported", but issues can be reported.
+# Create a configuration file
+curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
 
-1. `docker pull 0xchloe/spotiplex:latest`
-2. `touch spotiplex.env`
-3. Copy the contents of `default.env` from this repo to your new `.env` file, and edit as needed.
-4. `docker run --env-file spotiplex.env 0xchloe/spotiplex`
-5. Container will run sync of Lidarr lists and manually specified lists on initial start, and every day at midnight if CRON_SCHEDULE is not set
+# Edit the configuration file
+nano .env
 
-## Dependencies
+# Run the container
+docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
+```
 
-Using [python-plexapi](https://github.com/pkkid/python-plexapi), [spotipy](https://github.com/spotipy-dev/spotipy), [rtoml](https://github.com/samuelcolvin/rtoml), typer, supercronic, httpx
+### Python Installation
 
-## Upcoming Planned Features
+```bash
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
 
-- Add to Plex-Playlist-Manager (See above)
+# Clone repository
+git clone https://github.com/lammersbjorn/spotify-to-plex.git
+cd spotify-to-plex
 
-## Known Issues
+# Install dependencies
+poetry install
 
-1. Some Spotify Playlists, especially auto-generated and non-public ones, may not be accessible via API, resulting in 404 errors.
-2. Occasional track errors in certain playlists. The script will continue and import the rest of the playlist, noting any issues.
+# Configure
+cp .env.example .env
+nano .env
 
-## Disclaimer
+# Run
+poetry run spotify-to-plex --help
+```
 
-I am not responsible for how you utilize this script, nor am I responsible for your usage of the Spotify API, in or outside of conjunction with this script. Please read the Spotify TOS and Spotify Developer TOS carefully. This script is neither endorsed nor supported by Spotify. All uses of this script are at your own risk. Please buy the music you enjoy.
+## Configuration
+
+### Required API Access
+
+1. **Spotify API**
+   - Visit [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/)
+   - Create a new application
+   - Copy the Client ID and Client Secret
+
+2. **Plex API**
+   - Get your [Plex token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
+   - Note your Plex server URL (e.g., `http://localhost:32400`)
+
+3. **Lidarr API (Optional)**
+   - In Lidarr: Settings → General → Security
+   - Copy your API Key and server URL
+
+### Environment Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `SPOTIFY_CLIENT_ID` | Spotify Client ID | - | Yes |
+| `SPOTIFY_CLIENT_SECRET` | Spotify Client Secret | - | Yes |
+| `PLEX_TOKEN` | Plex authentication token | - | Yes |
+| `PLEX_SERVER_URL` | URL of your Plex server | - | Yes |
+| `PLEX_REPLACE` | Replace existing playlists | `false` | No |
+| `PLEX_USERS` | Comma-separated Plex users | Owner account | No |
+| `MANUAL_PLAYLISTS` | Comma-separated Spotify playlist IDs | - | Only if `LIDARR_SYNC=false` |
+| `LIDARR_API_KEY` | Lidarr API key | - | Only if `LIDARR_SYNC=true` |
+| `LIDARR_API_URL` | Lidarr server URL | - | Only if `LIDARR_SYNC=true` |
+| `LIDARR_SYNC` | Enable Lidarr sync | `false` | No |
+| `WORKER_COUNT` | Concurrent threads | `10` | No |
+| `SECONDS_INTERVAL` | Sleep interval (seconds) | `60` | No |
+| `FIRST_RUN` | Run sync at container start | `false` | No |
+| `CRON_SCHEDULE` | Schedule using cron syntax | `0 1 * * *` | No |
+
+## Usage
+
+### Command Line Interface
+
+```bash
+# Sync playlists from Lidarr
+poetry run spotify-to-plex sync-lidarr-imports
+
+# Sync manually specified playlists
+poetry run spotify-to-plex sync-manual-lists
+
+# Sync a specific playlist by ID
+poetry run spotify-to-plex sync-playlist 37i9dQZEVXcJZyENOWUFo7
+
+# Show help
+poetry run spotify-to-plex --help
+```
+
+### Docker Commands
+
+```bash
+# Run manual sync
+docker exec spotify-to-plex poetry run spotify-to-plex sync-manual-lists
+
+# View logs
+docker logs spotify-to-plex
+
+# Update container
+docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
+docker rm -f spotify-to-plex
+docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
+```
+
+## Advanced Configuration
+
+### Playlist Management
+
+- **Adding tracks**: By default, new tracks are added to existing playlists
+- **Replacing playlists**: Set `PLEX_REPLACE=true` to delete and recreate playlists on each sync
+
+### Scheduling
+
+Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
+- Every 6 hours: `0 */6 * * *`
+- Every Monday at midnight: `0 0 * * 1`
+- Every 30 minutes: `*/30 * * * *`
+
+## Troubleshooting
+
+### Common Issues
+
+1. **404 Not Found Errors**
+   - This usually means the playlist no longer exists or is inaccessible
+   - Check if the playlist ID is correct and still public/accessible
+   - For Spotify-generated playlists, see the important notice about API changes
+
+2. **No tracks found in Plex**
+   - Ensure music files are properly tagged with correct metadata
+   - Verify Plex has indexed your music library
+
+3. **API Authentication Errors**
+   - Check your API credentials in the `.env` file
+   - Ensure the Spotify application has the necessary permissions
+
+### Logs
+
+- Docker: `docker logs spotify-to-plex`
+- Python: Check `spotify_to_plex.log` in the application directory
+
+### Code Quality
+
+```bash
+# Run tests
+poetry run pytest
+
+# Lint and format
+poetry run ruff check .
+poetry run ruff format .
+```
+
+## License
+
+GPL-3.0 License - see the LICENSE file for details.
+
+---
+
+**Disclaimer**: This project is not affiliated with or endorsed by Spotify or Plex. Use in accordance with both services' terms of use.

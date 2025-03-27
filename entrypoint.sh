@@ -1,12 +1,26 @@
-#!/usr/bin/env bash
+#!/bin/bash
+set -e
 
-# Create the crontab file dynamically based on the passed environment variable
-echo "${CRON_SCHEDULE} poetry run spotiplex sync-lidarr-imports" > /etc/supercronic-cron
-echo "${CRON_SCHEDULE} poetry run spotiplex sync-manual-lists" >> /etc/supercronic-cron
+# Print environment information
+echo "Starting Spotify to Plex v${COMMIT_SHA}"
+echo "Running with Poetry $(poetry --version)"
+echo "Using cron schedule: ${CRON_SCHEDULE}"
 
-# Run the initial commands
-poetry run spotiplex sync-lidarr-imports
-poetry run spotiplex sync-manual-lists
+# Create logs directory if it doesn't exist
+mkdir -p ${SRC_DIR}/logs
 
-# Start supercronic with the generated crontab
-exec supercronic /etc/supercronic-cron
+# Create a crontab file
+echo "# Spotify to Plex sync crontab" > /tmp/crontab
+echo "${CRON_SCHEDULE} cd ${SRC_DIR} && poetry run python -m spotify_to_plex.main sync_lidarr_imports >> ${SRC_DIR}/logs/lidarr_sync.log 2>&1" >> /tmp/crontab
+echo "${CRON_SCHEDULE} cd ${SRC_DIR} && poetry run python -m spotify_to_plex.main sync_manual_lists >> ${SRC_DIR}/logs/manual_sync.log 2>&1" >> /tmp/crontab
+
+# Run initial sync if FIRST_RUN is enabled
+if [[ "${FIRST_RUN}" == "True" || "${FIRST_RUN}" == "true" || "${FIRST_RUN}" == "1" ]]; then
+    echo "Running initial sync as requested by FIRST_RUN setting"
+    poetry run python -m spotify_to_plex.main sync_lidarr_imports
+    poetry run python -m spotify_to_plex.main sync_manual_lists
+fi
+
+# Start the cron daemon
+echo "Starting supercronic with schedule: ${CRON_SCHEDULE}"
+exec supercronic -debug /tmp/crontab

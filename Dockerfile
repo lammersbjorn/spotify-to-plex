@@ -1,45 +1,69 @@
-FROM python:latest
+# Use a specific Python version for better reproducibility
+FROM python:3.11-slim-bullseye
+
+# Set metadata labels
+LABEL org.opencontainers.image.title="Spotify to Plex"
+LABEL org.opencontainers.image.description="Syncs Spotify playlists to Plex Media Server"
+LABEL org.opencontainers.image.source="https://github.com/lammersbjorn/spotify-to-plex"
 
 # Set environment variables
-ENV SRC_DIR /usr/bin/spotiplex/
-ENV POETRY_VERSION=1.7.1
-ENV PYTHONUNBUFFERED=1
-ENV CRON_SCHEDULE=@daily
-ENV DOCKER=True
+ENV SRC_DIR="/app" \
+    POETRY_VERSION="2.1.1" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1 \
+    CRON_SCHEDULE="@daily" \
+    DOCKER="True"
 
 # Accept commit SHA as a build argument
-ARG COMMIT_SHA
+ARG COMMIT_SHA="development"
 ENV COMMIT_SHA=${COMMIT_SHA}
 
-# Install Poetry
-RUN pip install "poetry==$POETRY_VERSION"
-RUN apt-get update && \
-    apt-get install -y curl && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+# Create a non-root user and working directory
+RUN groupadd -r appuser && useradd -r -g appuser -d ${SRC_DIR} appuser \
+    && mkdir -p ${SRC_DIR} \
+    && chown -R appuser:appuser ${SRC_DIR}
 
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Copy the application source code
-COPY ./spotiplex ${SRC_DIR}/spotiplex
-COPY pyproject.toml poetry.lock ${SRC_DIR}/
-COPY README.md ${SRC_DIR}/
-
-# Set the working directory
 WORKDIR ${SRC_DIR}
 
-# Install dependencies with Poetry
-RUN poetry config virtualenvs.create true \
-    && poetry install --no-interaction --no-ansi
-
-# Install supercronic
-RUN wget -O /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/download/v0.1.11/supercronic-linux-amd64 \
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       curl \
+       wget \
+       ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    # Install Poetry
+    && curl -sSL https://install.python-poetry.org | python3 - \
+    && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry \
+    # Install supercronic
+    && wget -q -O /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/download/v0.1.20/supercronic-linux-amd64 \
     && chmod +x /usr/local/bin/supercronic
 
+# Copy configuration files first to leverage layer caching
+COPY --chown=appuser:appuser pyproject.toml poetry.lock ./
+
+# Install dependencies only - this layer will be cached unless dependencies change
+RUN poetry install --no-root --no-dev
+
+# Copy application code
+COPY --chown=appuser:appuser spotify_to_plex/ ./spotify_to_plex/
+COPY --chown=appuser:appuser README.md ./
+
+# Install the application
+RUN poetry install --no-dev
+
 # Copy entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=appuser:appuser entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Log the commit SHA during the build
-RUN echo "Built from commit SHA: $COMMIT_SHA"
+RUN echo "Built from commit SHA: ${COMMIT_SHA}"
 
+# Switch to non-root user for better security
+USER appuser
+
+# Execute entrypoint script
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
