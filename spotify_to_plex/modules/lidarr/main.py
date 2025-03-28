@@ -16,6 +16,7 @@ class LidarrClass:
         self.url: str = Config.LIDARR_API_URL
         self.api_key: str = Config.LIDARR_API_KEY
         self.headers: dict[str, str] = {"X-Api-Key": self.api_key}
+        self.client = httpx.Client(headers=self.headers, timeout=30.0)  # Persistent client for connection reuse
 
         if not self.url or self.api_key == "":
             logger.warning("Lidarr API credentials not properly configured")
@@ -36,7 +37,7 @@ class LidarrClass:
         logger.debug(f"Making Lidarr API request to: {url}")
 
         try:
-            response = httpx.get(url=url, headers=self.headers, timeout=30.0)
+            response = self.client.get(url=url)
             response.raise_for_status()
         except httpx.RequestError as e:
             logger.exception(f"Network error during Lidarr API call: {e}")
