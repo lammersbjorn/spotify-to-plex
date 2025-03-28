@@ -92,37 +92,38 @@ poetry run spotify-to-plex --help
 
 ### Required API Access
 
-1. **Spotify API**
-   - Visit [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/)
-   - Create a new application
-   - Copy the Client ID and Client Secret
+1.  **Spotify API**
 
-2. **Plex API**
-   - Get your [Plex token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
-   - Note your Plex server URL (e.g., `http://localhost:32400`)
+    *   Visit [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/)
+    *   Create a new application
+    *   Copy the Client ID and Client Secret
+2.  **Plex API**
 
-3. **Lidarr API (Optional)**
-   - In Lidarr: Settings → General → Security
-   - Copy your API Key and server URL
+    *   Get your [Plex token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
+    *   Note your Plex server URL (e.g., `http://localhost:32400`)
+3.  **Lidarr API (Optional)**
+
+    *   In Lidarr: Settings → General → Security
+    *   Copy your API Key and server URL
 
 ### Environment Variables
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `SPOTIFY_CLIENT_ID` | Spotify Client ID | - | Yes |
-| `SPOTIFY_CLIENT_SECRET` | Spotify Client Secret | - | Yes |
-| `PLEX_TOKEN` | Plex authentication token | - | Yes |
-| `PLEX_SERVER_URL` | URL of your Plex server | - | Yes |
-| `PLEX_REPLACE` | Replace existing playlists | `false` | No |
-| `PLEX_USERS` | Comma-separated Plex users | Owner account | No |
-| `MANUAL_PLAYLISTS` | Comma-separated Spotify playlist IDs | - | Only if `LIDARR_SYNC=false` |
-| `LIDARR_API_KEY` | Lidarr API key | - | Only if `LIDARR_SYNC=true` |
-| `LIDARR_API_URL` | Lidarr server URL | - | Only if `LIDARR_SYNC=true` |
-| `LIDARR_SYNC` | Enable Lidarr sync | `false` | No |
-| `WORKER_COUNT` | Concurrent threads | `10` | No |
-| `SECONDS_INTERVAL` | Sleep interval (seconds) | `60` | No |
-| `FIRST_RUN` | Run sync at container start | `false` | No |
-| `CRON_SCHEDULE` | Schedule using cron syntax | `0 1 * * *` | No |
+| Variable                  | Description                                            | Default       | Required                         |
+| :------------------------ | :----------------------------------------------------- | :------------ | :------------------------------- |
+| `SPOTIFY_CLIENT_ID`       | Spotify Client ID                                      | -             | Yes                              |
+| `SPOTIFY_CLIENT_SECRET`   | Spotify Client Secret                                  | -             | Yes                              |
+| `PLEX_TOKEN`              | Plex authentication token                                | -             | Yes                              |
+| `PLEX_SERVER_URL`         | URL of your Plex server                                | -             | Yes                              |
+| `PLEX_REPLACE`            | Replace existing playlists                             | `false`       | No                               |
+| `PLEX_USERS`              | Comma-separated Plex users                             | Owner account | No                               |
+| `MANUAL_PLAYLISTS`        | Comma-separated Spotify playlist IDs                   | -             | Only if `LIDARR_SYNC=false`      |
+| `LIDARR_API_KEY`          | Lidarr API key                                         | -             | Only if `LIDARR_SYNC=true`       |
+| `LIDARR_API_URL`          | Lidarr server URL                                        | -             | Only if `LIDARR_SYNC=true`       |
+| `LIDARR_SYNC`             | Enable Lidarr sync                                     | `false`       | No                               |
+| `WORKER_COUNT`            | Concurrent threads                                     | `10`          | No                               |
+| `SECONDS_INTERVAL`        | Sleep interval (seconds)                               | `60`          | No                               |
+| `FIRST_RUN`               | Run sync at container start                            | `false`       | No                               |
+| `CRON_SCHEDULE`           | Schedule using cron syntax                             | `0 1 * * *`   | No                               |
 
 ## Usage
 
@@ -157,41 +158,50 @@ docker rm -f spotify-to-plex
 docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
 ```
 
+To update the container when using Docker Compose:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
 ## Advanced Configuration
 
 ### Playlist Management
 
-- **Adding tracks**: By default, new tracks are added to existing playlists
-- **Replacing playlists**: Set `PLEX_REPLACE=true` to delete and recreate playlists on each sync
+*   **Adding tracks**: By default, new tracks are added to existing playlists
+*   **Replacing playlists**: Set `PLEX_REPLACE=true` to delete and recreate playlists on each sync
 
 ### Scheduling
 
 Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
-- Every 6 hours: `0 */6 * * *`
-- Every Monday at midnight: `0 0 * * 1`
-- Every 30 minutes: `*/30 * * * *`
+
+*   Every 6 hours: `0 */6 * * *`
+*   Every Monday at midnight: `0 0 * * 1`
+*   Every 30 minutes: `*/30 * * * *`
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **404 Not Found Errors**
-   - This usually means the playlist no longer exists or is inaccessible
-   - Check if the playlist ID is correct and still public/accessible
-   - For Spotify-generated playlists, see the important notice about API changes
+1.  **404 Not Found Errors**
 
-2. **No tracks found in Plex**
-   - Ensure music files are properly tagged with correct metadata
-   - Verify Plex has indexed your music library
+    *   This usually means the playlist no longer exists or is inaccessible
+    *   Check if the playlist ID is correct and still public/accessible
+    *   For Spotify-generated playlists, see the important notice about API changes
+2.  **No tracks found in Plex**
 
-3. **API Authentication Errors**
-   - Check your API credentials in the `.env` file
-   - Ensure the Spotify application has the necessary permissions
+    *   Ensure music files are properly tagged with correct metadata
+    *   Verify Plex has indexed your music library
+3.  **API Authentication Errors**
+
+    *   Check your API credentials in the `.env` file
+    *   Ensure the Spotify application has the necessary permissions
 
 ### Logs
 
-- Docker: `docker logs spotify-to-plex`
-- Python: Check `spotify_to_plex.log` in the application directory
+*   Docker: `docker logs spotify-to-plex`
+*   Python: Check `spotify_to_plex.log` in the application directory
 
 ### Code Quality
 
