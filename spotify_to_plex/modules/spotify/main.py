@@ -109,14 +109,20 @@ class SpotifyClass:
 			except SpotifyException as e:
 				last_exception = e
 				if e.http_status == 429:
-					wait_time = BASE_RETRY_DELAY * (attempt + 1)
+					# Use Retry-After header if available
+					retry_after = None
+					if hasattr(e, "headers") and e.headers:
+						retry_after = e.headers.get("Retry-After")
+					try:
+						wait_time = int(retry_after) if retry_after is not None else BASE_RETRY_DELAY * (attempt + 1)
+					except Exception:
+						wait_time = BASE_RETRY_DELAY * (attempt + 1)
 					logger.warning(
 						f"Rate limited by Spotify API. Waiting {wait_time}s before retry {attempt+1}/{MAX_RETRIES}"
 					)
 					time.sleep(wait_time)
 					continue
 				elif e.http_status == 404:
-					# Don't log detailed 404 errors, just raise to be handled by caller
 					raise
 				elif attempt < MAX_RETRIES - 1:
 					wait_time = BASE_RETRY_DELAY * (attempt + 1)
