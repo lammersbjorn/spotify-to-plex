@@ -1,43 +1,39 @@
 """Module for interacting with the Spotify API."""
 
 import time
-from typing import List, Optional, Tuple, Any
+import re
+from typing import Dict, List, Optional, Tuple, Any
 
 import httpx
 import spotipy
 from loguru import logger
-from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
 
 from spotify_to_plex.config import Config
 from spotify_to_plex.utils.cache import cache_result
 
-# HTTP status code constants
+# HTTP status codes
 HTTP_UNAUTHORIZED = 401
-HTTP_RATE_LIMIT = 429
 HTTP_NOT_FOUND = 404
-
+HTTP_RATE_LIMIT = 429
 
 class SpotifyClass:
-    """Handles interactions with the Spotify API."""
+    """Encapsulates Spotify API operations."""
 
     def __init__(self: "SpotifyClass") -> None:
-        """Initialize the Spotify client using Client ID and Client Secret from config."""
+        """Initialize Spotify API client."""
+        # Initialize credentials and client
         self.spotify_id = Config.SPOTIFY_CLIENT_ID
         self.spotify_key = Config.SPOTIFY_CLIENT_SECRET
-        self.request_timeout = 30.0  # 30 second timeout for API calls
+        self.request_timeout = 30  # seconds
 
-        if not self.spotify_id or not self.spotify_key:
-            logger.warning(
-                "Spotify Client ID or Client Secret not properly configured",
-            )
-            logger.warning(
-                "Please set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in your .env file",
-            )
+        client_credentials_manager = SpotifyClientCredentials()
+        self.sp = spotipy.Spotify(
+            client_credentials_manager=client_credentials_manager,
+            requests_timeout=self.request_timeout,  # Longer timeout for stability
+        )
 
-        self.sp = self.connect_spotify()
-
-    def connect_spotify(self: "SpotifyClass") -> Spotify:
+    def connect_spotify(self: "SpotifyClass") -> spotipy.Spotify:
         """Establish a connection to the Spotify API using client credentials authentication.
 
         This authentication method only allows accessing public data that doesn't require
@@ -131,18 +127,53 @@ class SpotifyClass:
         # This should never be reached but just in case
         raise Exception(f"Failed after {max_retries} attempts")
 
-    @cache_result(ttl=3600, use_disk=True)  # Cache for 1 hour using disk storage
-    def get_playlist_tracks(
-        self: "SpotifyClass",
-        playlist_id: str,
-    ) -> list[tuple[str, str]]:
-        """Fetch tracks from the given Spotify playlist.
+    @cache_result(ttl=3600)  # Cache for 1 hour using memory
+    def get_playlist_name(self: "SpotifyClass", playlist_id: str) -> str | None:
+        """Retrieve the name of a Spotify playlist.
 
         Args:
             playlist_id: The Spotify playlist ID.
 
         Returns:
-            A list of tuples with track name and artist name.
+            The playlist name if available, else None.
+        """
+        try:
+            # More targeted API request (just get the name)
+            playlist = self.sp.playlist(playlist_id, fields="name")
+            name = playlist.get("name")
+            if name:
+                logger.debug(f"Retrieved playlist name: '{name}'")
+                return name
+        except spotipy.exceptions.SpotifyException as e:
+            # Improve 404 error handling
+            if hasattr(e, 'http_status') and e.http_status == HTTP_NOT_FOUND:
+                logger.error(f"Playlist not found: '{playlist_id}'. It may have been deleted or made private.")
+                # Return None explicitly for 404 so callers can handle this specifically
+                return None
+            elif "not find" in str(e).lower() or "not exist" in str(e).lower():
+                logger.error(f"Playlist not found: '{playlist_id}'. Error message: {e}")
+                return None
+            else:
+                logger.error(f"Error fetching playlist '{playlist_id}': {e}")
+                raise
+        except Exception as exc:
+            logger.exception(f"Error retrieving playlist name for ID {playlist_id}: {exc}")
+            return None
+
+        logger.warning(f"Playlist {playlist_id} has no name")
+        return None
+
+    @cache_result(ttl=7200, use_disk=True)
+    def get_playlist_tracks(
+        self: "SpotifyClass", playlist_id: str
+    ) -> list[tuple[str, str]]:
+        """Get all track names and artist names from a Spotify playlist.
+
+        Args:
+            playlist_id: Spotify playlist ID.
+
+        Returns:
+            List of (track_name, artist_name) tuples.
         """
         tracks: list[tuple[str, str]] = []
         try:
@@ -192,7 +223,7 @@ class SpotifyClass:
             )
 
         except spotipy.exceptions.SpotifyException as e:
-            if e.http_status == HTTP_NOT_FOUND:
+            if hasattr(e, 'http_status') and e.http_status == HTTP_NOT_FOUND:
                 logger.warning(
                     f"Playlist {playlist_id} not found (404). "
                     "It may have been deleted or made private.",
@@ -207,46 +238,6 @@ class SpotifyClass:
             )
 
         return tracks
-
-    @cache_result(ttl=3600)  # Cache for 1 hour using memory
-    def get_playlist_name(self: "SpotifyClass", playlist_id: str) -> str | None:
-        """Retrieve the name of a Spotify playlist.
-
-        Args:
-            playlist_id: The Spotify playlist ID.
-
-        Returns:
-            The playlist name if available, else None.
-        """
-        try:
-            playlist_data = self._execute_with_retry(
-                self.sp.playlist,
-                playlist_id,
-                fields="name"
-            )
-            name = playlist_data.get("name")
-            if name:
-                logger.debug(f"Retrieved playlist name: '{name}'")
-                return name
-        except spotipy.exceptions.SpotifyException as e:
-            if e.http_status == HTTP_NOT_FOUND:
-                logger.warning(
-                    f"Playlist {playlist_id} not found (404). "
-                    "It may have been deleted or made private.",
-                )
-            else:
-                logger.exception(
-                    f"Error retrieving playlist name for ID {playlist_id}: {e}",
-                )
-            return None
-        except Exception as exc:
-            logger.exception(
-                f"Error retrieving playlist name for ID {playlist_id}: {exc}",
-            )
-            return None
-
-        logger.warning(f"Playlist {playlist_id} has no name")
-        return None
 
     @cache_result(ttl=86400)  # Cache for 24 hours using memory (covers rarely change)
     def get_playlist_poster(self: "SpotifyClass", playlist_id: str) -> str | None:
@@ -271,7 +262,7 @@ class SpotifyClass:
                     logger.debug(f"Retrieved cover art URL for playlist {playlist_id}")
                     return image_url
         except spotipy.exceptions.SpotifyException as e:
-            if e.http_status == HTTP_NOT_FOUND:
+            if hasattr(e, 'http_status') and e.http_status == HTTP_NOT_FOUND:
                 logger.warning(
                     f"Playlist {playlist_id} not found (404). "
                     "It may have been deleted or made private.",

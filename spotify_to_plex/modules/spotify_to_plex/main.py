@@ -1,12 +1,13 @@
 """Main module for syncing Spotify to Plex playlists."""
 
 import concurrent.futures
+import os
 import re
 import sys
 import threading
 import time
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
 from loguru import logger
 from tqdm import tqdm
@@ -15,6 +16,12 @@ from spotify_to_plex.config import Config
 from spotify_to_plex.modules.lidarr.main import LidarrClass
 from spotify_to_plex.modules.plex.main import PlexClass
 from spotify_to_plex.modules.spotify.main import SpotifyClass
+from spotify_to_plex.utils.logging_utils import (
+    log_info, log_debug, log_warning, log_error, log_success,
+    log_header, log_step_start, log_step_end, log_playlist_step,
+    Symbols, ProgressBar, perform_task, console_lock, get_version,
+    set_active_progress_bar, ensure_newline, draw_box  # Added draw_box import
+)
 
 
 class SpotifyToPlex:
@@ -28,28 +35,22 @@ class SpotifyToPlex:
         parallel: bool = False,
         parallel_count: Optional[int] = None,
     ) -> None:
-        """Initialize services and determine playlists to sync.
-
-        Args:
-            lidarr: Whether to fetch playlists from Lidarr.
-            playlist_id: Specific playlist ID to sync (if provided).
-            parallel: Whether to process playlists in parallel.
-            parallel_count: Maximum number of playlists to process in parallel.
-        """
+        """Initialize services and determine playlists to sync."""
         # Check configuration warnings
         warnings = Config.validate()
         for warning in warnings:
-            logger.warning(f"Configuration warning: {warning}")
+            log_warning(f"Configuration warning: {warning}")
 
         self.spotify_service = SpotifyClass()
         self.plex_service = PlexClass()
+        self.version = get_version()
 
         # Initialize default user from Plex before fetching user list
         try:
             self.default_user: str = self.plex_service.plex.myPlexAccount().username
-            logger.debug(f"Connected to Plex as user: {self.default_user}")
+            log_debug(f"Connected to Plex as user: {self.default_user}")
         except Exception as e:
-            logger.error(f"Failed to get Plex username: {e}")
+            log_error(f"Failed to get Plex username: {e}")
             self.default_user = "default_user"
 
         self.user_list = self.get_user_list()
@@ -79,11 +80,7 @@ class SpotifyToPlex:
         self.status["total_playlists"] = len(self.sync_lists)
 
     def get_user_list(self: "SpotifyToPlex") -> list[str]:
-        """Retrieve the list of Plex users from configuration.
-
-        Returns:
-            List of Plex usernames to process.
-        """
+        """Retrieve the list of Plex users from configuration."""
         plex_users = Config.PLEX_USERS
         user_list = (
             [u.strip() for u in plex_users.split(",") if u.strip()]
@@ -92,41 +89,37 @@ class SpotifyToPlex:
         )
         if not user_list:
             user_list.append(self.default_user)
-        logger.debug(f"Users to process: {user_list}")
+        log_debug(f"Users to process: {user_list}", Symbols.USERS)
         return user_list
 
     def get_sync_lists(self: "SpotifyToPlex") -> None:
         """Retrieve the lists of playlist IDs from Lidarr or the config."""
         if self.lidarr:
+            log_info("Fetching playlists from Lidarr...", Symbols.LIST)
             playlists = self.lidarr_service.playlist_request()
             self.sync_lists = [
                 playlist_id for playlist in playlists for playlist_id in playlist
             ]
-            logger.info(f"Retrieved {len(self.sync_lists)} playlists from Lidarr")
+            log_info(f"Retrieved {len(self.sync_lists)} playlists from Lidarr", Symbols.LIST)
         else:
             manual_playlists = Config.MANUAL_PLAYLISTS
             self.sync_lists = [
                 pl.strip() for pl in manual_playlists.split(",") if pl.strip()
             ]
-            logger.info(
-                f"Using {len(self.sync_lists)} manually configured playlists",
-            )
+            log_info(f"Using {len(self.sync_lists)} manually configured playlists", Symbols.LIST)
 
     def process_for_user(self: "SpotifyToPlex", user: str) -> None:
-        """Sync playlists for a given Plex user.
-
-        Args:
-            user: The Plex username.
-        """
-        logger.info(f"Processing for user: {user}")
+        """Sync playlists for a given Plex user."""
+        log_info(f"Processing for user: {user}", Symbols.USER)
 
         # Switch to the specified user if not the default user
         if user != self.default_user:
             try:
+                log_info(f"Switching to Plex user {user}...", Symbols.USER)
                 self.plex_service.plex = self.plex_service.plex.switchUser(user)
-                logger.debug(f"Successfully switched to Plex user: {user}")
+                log_debug(f"Successfully switched to Plex user: {user}")
             except Exception as exc:
-                logger.error(f"Failed to switch to Plex user {user}: {exc}")
+                log_error(f"Failed to switch to Plex user {user}: {exc}")
                 return
 
         if self.parallel and len(self.sync_lists) > 1:
@@ -135,200 +128,298 @@ class SpotifyToPlex:
             self._process_playlists_sequential(user)
 
     def _process_playlists_sequential(self: "SpotifyToPlex", user: str) -> None:
-        """Process playlists sequentially for a user with better progress tracking.
+        """Process playlists sequentially for a user with better progress tracking."""
+        log_info(f"Processing {len(self.sync_lists)} playlists sequentially for {user}", Symbols.PROCESSING)
 
-        Args:
-            user: The Plex username.
-        """
-        # Check if we're in an interactive environment for proper progress bar
-        use_progress_bar = sys.stdout.isatty()
+        # Create a custom progress bar
+        progress_bar = ProgressBar(
+            total=len(self.sync_lists),
+            prefix=f"Processing playlists for {user}",
+            suffix=""
+        )
 
-        # Process playlists sequentially with a progress bar if in interactive mode
-        with tqdm(total=len(self.sync_lists), desc=f"Processing playlists for {user}",
-                  file=sys.stdout, disable=not use_progress_bar) as pbar:
-            for i, playlist in enumerate(self.sync_lists):
+        for i, playlist in enumerate(self.sync_lists):
+            try:
+                self.status["current_playlist"] = playlist
+                playlist_id_short = playlist[:8] + "..." if len(playlist) > 8 else playlist
+
+                # Try to get playlist name for better display
+                playlist_name = None
                 try:
-                    self.status["current_playlist"] = playlist
-                    pbar.set_description(f"Processing {i+1}/{len(self.sync_lists)}: {playlist[:8]}...")
+                    playlist_id = self.extract_playlist_id(playlist)
+                    playlist_name = self.spotify_service.get_playlist_name(playlist_id)
+                    display_name = f"{playlist_id_short} {{{playlist_name}}}"
+                    progress_bar.prefix = f"[{i+1}/{len(self.sync_lists)}] Processing: {display_name}"
+                except:
+                    progress_bar.prefix = f"[{i+1}/{len(self.sync_lists)}] Processing: {playlist_id_short}"
 
-                    # More verbose logging before processing
-                    logger.info(f"Starting playlist {i+1}/{len(self.sync_lists)}: {playlist}")
-                    print(f"\n----- Processing playlist {i+1}/{len(self.sync_lists)} -----")
+                progress_bar.update(i)
 
-                    # Process with timeout protection
-                    success = self._process_playlist_with_timeout(playlist)
+                # Process the playlist with name in logs
+                if playlist_name:
+                    log_info(f"Processing playlist {i+1}/{len(self.sync_lists)}: {playlist} {{{playlist_name}}}", Symbols.MUSIC)
+                    log_step_start(f"Processing playlist: {display_name}", i+1, len(self.sync_lists))
+                else:
+                    log_info(f"Processing playlist {i+1}/{len(self.sync_lists)}: {playlist}", Symbols.MUSIC)
+                    log_step_start(f"Processing playlist: {playlist_id_short}", i+1, len(self.sync_lists))
 
-                    if success:
-                        self.status["completed_playlists"] += 1
-                        msg = f"✓ Completed {i+1}/{len(self.sync_lists)}: {playlist[:8]}"
-                        pbar.set_description(msg)
-                        logger.info(f"Successfully processed playlist: {playlist}")
-                        print(f"\n{msg}")
+                start_time = time.time()
+                success = self._process_playlist_with_timeout(playlist)
+                elapsed = time.time() - start_time
+
+                if success:
+                    self.status["completed_playlists"] += 1
+                    if playlist_name:
+                        log_step_end(f"Playlist {display_name}", "completed", elapsed)
+                        log_success(f"Successfully processed playlist: {playlist} {{{playlist_name}}}")
                     else:
-                        self.status["failed_playlists"] += 1
-                        msg = f"✗ Failed {i+1}/{len(self.sync_lists)}: {playlist[:8]}"
-                        pbar.set_description(msg)
-                        logger.error(f"Failed to process playlist: {playlist}")
-                        print(f"\n{msg}")
-                except Exception as exc:
+                        log_step_end(f"Playlist {playlist_id_short}", "completed", elapsed)
+                        log_success(f"Successfully processed playlist: {playlist}")
+                else:
                     self.status["failed_playlists"] += 1
-                    logger.exception(f"Error processing playlist {playlist}: {exc}")
-                    pbar.set_description(f"✗ Error {i+1}/{len(self.sync_lists)}: {playlist[:8]}")
-                    print(f"\n✗ Error processing playlist: {playlist}")
-                finally:
-                    pbar.update(1)
-                    pbar.refresh()
+                    if playlist_name:
+                        log_step_end(f"Playlist {display_name}", "failed", elapsed)
+                        log_error(f"Failed to process playlist: {playlist} {{{playlist_name}}}")
+                    else:
+                        log_step_end(f"Playlist {playlist_id_short}", "failed", elapsed)
+                        log_error(f"Failed to process playlist: {playlist}")
+
+            except Exception as exc:
+                self.status["failed_playlists"] += 1
+                logger.exception(f"Error processing playlist {playlist}: {exc}")
+                log_error(f"Error processing playlist: {playlist}")
+
+            finally:
+                progress_bar.update(i+1)
+
+        # Complete the progress bar
+        progress_bar.finish()
+
+        # Make sure we always have a newline after the progress bar
+        with console_lock:
+            ensure_newline()
+
+        # Print summary
+        log_info(f"Completed {self.status['completed_playlists']}/{len(self.sync_lists)} playlists for {user}",
+                 Symbols.FINISH)
 
     def _process_playlists_parallel(self: "SpotifyToPlex", user: str) -> None:
-        """Process playlists in parallel for a user with better error handling.
-
-        Args:
-            user: The Plex username.
-        """
-        logger.info(f"Processing {len(self.sync_lists)} playlists in parallel (max {self.parallel_count} at a time)")
-        print(f"\nProcessing {len(self.sync_lists)} playlists in parallel (max {self.parallel_count} at a time)...")
+        """Process playlists in parallel for a user with better error handling."""
+        log_info(f"Processing {len(self.sync_lists)} playlists in parallel (max {self.parallel_count} at a time)",
+                 Symbols.PROCESSING)
 
         # Use a thread pool to process playlists in parallel with timeouts
         completed_count = 0
         failed_count = 0
         active_threads = []
         results = {}
+        threads_lock = threading.RLock()  # Add lock for thread list manipulation
 
-        with tqdm(total=len(self.sync_lists), desc=f"Processing playlists for {user}", file=sys.stdout) as pbar:
-            # Process in batches to avoid overwhelming the system
-            for i in range(0, len(self.sync_lists), self.parallel_count):
-                batch = self.sync_lists[i:i+self.parallel_count]
-                threads = []
+        # Create a better progress bar
+        progress_bar = ProgressBar(
+            total=len(self.sync_lists),
+            prefix=f"Parallel processing for {user}",
+            suffix=f"0 completed, 0 failed"
+        )
 
-                # More verbose logging for batch
-                print(f"\nStarting batch of {len(batch)} playlists ({i+1}-{min(i+len(batch), len(self.sync_lists))} of {len(self.sync_lists)})")
+        # Register this as the active progress bar
+        set_active_progress_bar(progress_bar)
 
-                # Start a thread for each playlist in the batch
-                for playlist in batch:
-                    self.status["current_playlist"] = playlist
-                    thread = threading.Thread(
-                        target=self._process_playlist_thread,
-                        args=(playlist, results)
-                    )
-                    thread.start()
+        # Process in batches to avoid overwhelming the system
+        for i in range(0, len(self.sync_lists), self.parallel_count):
+            batch = self.sync_lists[i:i+self.parallel_count]
+            threads = []
+
+            # Create clear visual separator without duplicating logs
+            batch_range = f"{i+1}-{min(i+len(batch), len(self.sync_lists))}"
+            ensure_newline()
+            print(f"\n=== BATCH {batch_range}/{len(self.sync_lists)} ===\n")
+
+            progress_bar.prefix = f"Batch {batch_range}/{len(self.sync_lists)}"
+
+            # Start a thread for each playlist in the batch
+            for playlist in batch:
+                self.status["current_playlist"] = playlist
+                thread = threading.Thread(
+                    target=self._process_playlist_thread,
+                    args=(playlist, results)
+                )
+                thread.start()
+                with threads_lock:
                     threads.append(thread)
                     active_threads.append(thread)
 
-                # Wait for threads to complete with progress updates
-                while any(t.is_alive() for t in threads):
+            # Wait for threads to complete with progress updates
+            while True:
+                with threads_lock:
+                    if not any(t.is_alive() for t in threads):
+                        break
                     # Check for newly completed threads
-                    newly_completed = sum(1 for t in threads if not t.is_alive() and t in active_threads)
-                    if newly_completed > 0:
-                        # Update progress
-                        pbar.update(newly_completed)
+                    newly_completed = [t for t in active_threads if not t.is_alive()]
+                    if newly_completed:
                         # Remove completed threads
                         active_threads = [t for t in active_threads if t.is_alive()]
+                # Update the progress bar
+                with threads_lock:
+                    current_completed = sum(1 for success in results.values() if success)
+                    current_failed = len(results) - current_completed
+                    progress_bar.suffix = f"{current_completed} completed, {current_failed} failed"
+                    progress_bar.update(current_completed + current_failed)
 
-                        # Update the description to show overall progress
-                        current_completed = sum(1 for success in results.values() if success)
-                        current_failed = len(results) - current_completed
-                        pbar.set_description(f"Completed: {current_completed}, Failed: {current_failed}")
+                time.sleep(0.1)
 
-                    pbar.refresh()
-                    time.sleep(0.5)
-
-                # Process any remaining updates
-                remaining = sum(1 for t in threads if not t.is_alive() and t in active_threads)
-                if remaining > 0:
-                    pbar.update(remaining)
+            # Process any remaining updates
+            with threads_lock:
+                remaining = [t for t in threads if not t.is_alive() and t in active_threads]
+                if remaining:
                     active_threads = [t for t in active_threads if t.is_alive()]
+                    current_completed = sum(1 for success in results.values() if success)
+                    current_failed = len(results) - current_completed
+                    progress_bar.suffix = f"{current_completed} completed, {current_failed} failed"
+                    progress_bar.update(current_completed + current_failed)
 
-            # Final tally
+        # Final tally
+        with threads_lock:
             completed_count = sum(1 for success in results.values() if success)
             failed_count = len(results) - completed_count
             self.status["completed_playlists"] = completed_count
             self.status["failed_playlists"] = failed_count
 
-            pbar.set_description(f"Completed: {completed_count}, Failed: {failed_count}")
+        # Complete the progress bar
+        progress_bar.finish()
 
-            # Print summary after all playlists
-            print(f"\nBatch processing complete: {completed_count} succeeded, {failed_count} failed")
-            logger.info(f"Batch processing complete: {completed_count} succeeded, {failed_count} failed")
+        # Make sure we always have a newline after the progress bar
+        with console_lock:
+            ensure_newline()
+
+        # Clear the active progress bar reference
+        set_active_progress_bar(None)
+
+        # Print summary after all playlists
+        log_info(f"Batch processing complete: {completed_count} succeeded, {failed_count} failed",
+                 Symbols.FINISH)
 
     def _process_playlist_thread(self, playlist: str, results: dict) -> None:
-        """Thread worker to process a playlist and store the result.
-
-        Args:
-            playlist: The playlist ID to process
-            results: Dictionary to store results (thread-safe)
-        """
+        """Thread worker to process a playlist and store the result."""
         try:
+            playlist_name = None
+            try:
+                # Try to get playlist name first for better logging
+                playlist_id = self.extract_playlist_id(playlist)
+                playlist_name = self.spotify_service.get_playlist_name(playlist_id)
+                if playlist_name:
+                    log_debug(f"Thread starting for playlist: {playlist_id} {{{playlist_name}}}", Symbols.THREAD)
+                else:
+                    # Handle case where playlist_name is None (404 error)
+                    log_warning(f"Thread starting for playlist: {playlist_id} - Playlist not found", Symbols.THREAD)
+            except Exception:
+                # If we can't get the name, just continue with the ID
+                log_debug(f"Thread starting for playlist: {playlist}", Symbols.THREAD)
+                pass
+
+            # Process the playlist
             success = self._process_playlist_with_timeout(playlist)
-            results[playlist] = success
+
+            # Store result
+            with threading.RLock():  # Safely update the results dictionary
+                results[playlist] = success
+
+            # Log with playlist name if available
+            display_name = f"{playlist} {{{playlist_name}}}" if playlist_name else playlist
+            if success:
+                log_info(f"Thread successfully processed playlist {display_name}", Symbols.SUCCESS)
+            else:
+                log_error(f"Thread failed to process playlist {display_name}", Symbols.ERROR)
         except Exception as exc:
             logger.exception(f"Thread error processing playlist {playlist}: {exc}")
-            results[playlist] = False
+            with threading.RLock():
+                results[playlist] = False
 
     def _process_playlist_with_timeout(self, playlist: str, timeout: int = 300) -> bool:
-        """Process a playlist with a timeout safety mechanism.
-
-        Args:
-            playlist: The playlist ID to process
-            timeout: Maximum time in seconds to process a playlist
-
-        Returns:
-            True if processing succeeded, False otherwise
-        """
+        """Process a playlist with a timeout safety mechanism."""
         try:
+            # Get playlist name for better logging if possible
+            playlist_name = None
+            try:
+                playlist_id = self.extract_playlist_id(playlist)
+                playlist_name = self.spotify_service.get_playlist_name(playlist_id)
+                display_name = f"{playlist} {{{playlist_name}}}"
+            except:
+                display_name = playlist
+
             # Create a result container
             result = {"success": False, "exception": None}
+            result_lock = threading.Lock()
 
             # Define the worker function
             def worker():
                 try:
                     self._process_playlist(playlist)
-                    result["success"] = True
+                    with result_lock:
+                        result["success"] = True
                 except Exception as exc:
-                    result["exception"] = exc
-                    result["success"] = False
+                    with result_lock:
+                        result["exception"] = exc
 
             # Start a thread for the worker
             thread = threading.Thread(target=worker)
             thread.daemon = True
             thread.start()
 
-            # Wait for the thread with timeout
-            thread.join(timeout)
+            log_debug(f"Started processing playlist {display_name} with {timeout}s timeout", Symbols.TIME)
+
+            # Show a periodic pulse while waiting for the thread
+            start_time = time.time()
+            while thread.is_alive() and (time.time() - start_time) < timeout:
+                thread.join(1.0)  # Check every second
 
             # Check if thread is still running (timed out)
             if thread.is_alive():
-                logger.warning(f"Processing timed out after {timeout}s for playlist {playlist}")
+                log_warning(f"Processing timed out after {timeout}s for playlist {display_name}", Symbols.TIME)
                 return False
 
             # Check the result
-            if not result["success"]:
-                if result["exception"]:
-                    logger.error(f"Error processing playlist {playlist}: {result['exception']}")
-                return False
+            with result_lock:
+                if not result["success"]:
+                    if result["exception"]:
+                        log_error(f"Error processing playlist {display_name}: {result['exception']}")
+                    return False
 
+            log_debug(f"Playlist {display_name} processed within timeout period", Symbols.TIME)
             return True
 
         except Exception as exc:
-            logger.exception(f"Error in timeout wrapper for playlist {playlist}: {exc}")
+            log_error(f"Error in timeout wrapper for playlist {playlist}: {exc}")
             return False
 
     def run(self: "SpotifyToPlex") -> None:
         """Run the sync process for all users."""
         if not self.sync_lists:
-            logger.warning("No playlists to sync!")
+            log_warning("No playlists to sync!")
             return
 
-        logger.info(
-            f"Starting sync process for {len(self.sync_lists)} playlists "
-            f"and {len(self.user_list)} users",
-        )
+        log_header("Starting Sync Process")
+        log_info(f"Starting sync for {len(self.sync_lists)} playlists "
+                 f"and {len(self.user_list)} users", Symbols.START)
 
         if self.parallel:
-            logger.info(f"Parallel processing enabled with max {self.parallel_count} concurrent playlists")
+            log_info(f"Parallel processing enabled with max {self.parallel_count} concurrent playlists",
+                     Symbols.PROCESSING)
+
+        start_time = time.time()
 
         # Simple progress tracking for users
         for i, user in enumerate(self.user_list):
-            print(f"\nProcessing user {i+1}/{len(self.user_list)}: {user}")
+            user_start_time = time.time()
+
+            # Create a nicely formatted header for this user
+            with console_lock:
+                print(f"\n┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+                print(f"┃  USER {i+1}/{len(self.user_list)}: {user: <32} ┃")
+                print(f"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+
+            log_info(f"Starting processing for user {i+1}/{len(self.user_list)}: {user}", Symbols.USER)
+
             # Reset playlist counters for this user
             self.status["completed_playlists"] = 0
             self.status["failed_playlists"] = 0
@@ -337,121 +428,195 @@ class SpotifyToPlex:
             self.process_for_user(user)
 
             # Display summary for this user
-            print(f"Completed user {i+1}/{len(self.user_list)}: {user} - "
-                  f"{self.status['completed_playlists']} succeeded, "
-                  f"{self.status['failed_playlists']} failed")
+            user_time = time.time() - user_start_time
+            log_info(
+                f"Completed user {i+1}/{len(self.user_list)}: {user} in {user_time:.1f}s - "
+                f"{self.status['completed_playlists']} succeeded, "
+                f"{self.status['failed_playlists']} failed", Symbols.SUCCESS
+            )
 
         # Calculate total statistics
+        total_time = time.time() - start_time
         total_processed = self.status["completed_playlists"] + self.status["failed_playlists"]
-        success_rate = (self.status["completed_playlists"] / max(1, total_processed)) * 100
+        success_rate = (self.status["completed_playlists"] / max(1, total_processed)) * 100 if total_processed > 0 else 0
 
-        print(f"\n✅ Sync process completed! Success rate: {success_rate:.1f}%")
-        logger.info(f"Sync process completed with {self.status['completed_playlists']} "
-                   f"successes and {self.status['failed_playlists']} failures")
+        # Final summary with nice formatting
+        with console_lock:
+            print("\n" + "═" * 60)
+            print(f"  {Symbols.FINISH} SYNC PROCESS COMPLETED")
+            print("  " + "─" * 30)
+            print(f"  • Time taken: {total_time:.1f}s")
+            print(f"  • Success rate: {success_rate:.1f}%")
+            print(f"  • Successful: {self.status['completed_playlists']}/{total_processed}")
+            print(f"  • Failed: {self.status['failed_playlists']}/{total_processed}")
+            print("═" * 60 + "\n")
+
+        log_info(
+            f"Sync process completed in {total_time:.1f}s with {self.status['completed_playlists']} "
+            f"successes ({success_rate:.1f}%) and {self.status['failed_playlists']} failures", Symbols.FINISH
+        )
 
     def _process_playlist(self: "SpotifyToPlex", playlist: str) -> None:
-        """Process a single playlist: fetch data from Spotify and update Plex.
-
-        Args:
-            playlist: The playlist URL or ID.
-        """
+        """Process a single playlist: fetch data from Spotify and update Plex."""
         try:
-            # Add debug logging to track progress
-            logger.debug(f"Starting to process playlist: {playlist}")
-
+            # Extract playlist ID and get playlist name
+            log_debug(f"Starting to process playlist: {playlist}", Symbols.SEARCH)
             playlist_id = self.extract_playlist_id(playlist)
-            logger.debug(f"Extracted playlist ID: {playlist_id}")
-            print(f"• Extracted playlist ID: {playlist_id}")
 
-            # Get playlist name from Spotify with timeout
+            # Create clear separator for playlist section using box drawing characters
+            with console_lock:
+                # Create a properly aligned box with the playlist ID
+                title = f" PLAYLIST: {playlist_id} "
+                top, content, bottom = draw_box(title, padding=2, extra_width=4)
+
+                # Add extra space before the box
+                print("\n\n")
+                print(top)
+                print(content)
+                print(bottom)
+                print()
+
+            # Step 1: Get playlist details from Spotify
+            log_step_start("Getting playlist details", 1, 4)
             playlist_name = None
-            try:
-                print(f"• Getting playlist name from Spotify...")
-                playlist_name = self.spotify_service.get_playlist_name(playlist_id)
-                print(f"• Playlist name: {playlist_name}")
-            except Exception as e:
-                logger.error(f"Error getting playlist name: {e}")
-                print(f"• Error getting playlist name: {e}")
+            start_time = time.time()
 
-            if not playlist_name:
-                logger.error(f"Could not retrieve name for playlist ID '{playlist_id}'")
-                print(f"• Error: Could not retrieve name for playlist ID '{playlist_id}'")
+            try:
+                playlist_name = self.spotify_service.get_playlist_name(playlist_id)
+
+                if playlist_name:
+                    display_name = f"{playlist_id} {{{playlist_name}}}"
+                    # Only print to console once - not both log and print
+                    log_playlist_step(
+                        playlist_id,
+                        playlist_name,
+                        "Retrieved playlist",
+                        console_only=True,
+                    )
+                    # Console-only to prevent double logging
+                    log_step_end(
+                        "Get playlist details",
+                        "completed",
+                        time.time() - start_time,
+                        f"Playlist name: '{playlist_name}'",
+                        console_only=True
+                    )
+
+                    # Create a new box with playlist name included
+                    with console_lock:
+                        title = f" PLAYLIST: {playlist_id} {{{playlist_name}}} "
+                        top, content, bottom = draw_box(title, padding=2, extra_width=4)
+                        print("\n")
+                        print(top)
+                        print(content)
+                        print(bottom)
+                        print()
+                else:
+                    log_error(f"Playlist not found or access denied: '{playlist_id}'")
+                    log_step_end("Get playlist details", "failed (not found)", time.time() - start_time, console_only=True)
+                    return
+            except Exception as e:
+                # Check specifically for 404 errors to provide better message
+                if "404" in str(e) or "not found" in str(e).lower():
+                    log_error(f"Playlist not found: '{playlist_id}'. It may have been deleted or made private.")
+                else:
+                    log_error(f"Error getting playlist name: {e}")
+                log_step_end("Get playlist details", "failed", time.time() - start_time, console_only=True)
                 return
 
-            # Thread-safe logging for parallel operation
-            thread_id = ""
-            if self.parallel:
-                thread_id = f"[Thread-{threading.get_ident() % 100:02d}] "
-
-            logger.info(f"{thread_id}Starting processing of playlist: {playlist_name}")
-
-            # Step 1: Get tracks from Spotify
-            print(f"• Fetching tracks from Spotify for '{playlist_name}'...")
-            logger.debug(f"{thread_id}Fetching tracks from Spotify...")
-
             # Add date to dynamic playlists like Discover Weekly
-            if "Discover Weekly" in playlist_name or "Daily Mix" in playlist_name:
+            if playlist_name and ("Discover Weekly" in playlist_name or "Daily Mix" in playlist_name):
                 current_date = datetime.now(timezone.utc).strftime("%B %d")
                 playlist_name = f"{playlist_name} {current_date}"
-                logger.debug(f"{thread_id}Added date to dynamic playlist: {playlist_name}")
-                print(f"• Added date to dynamic playlist: {playlist_name}")
+                log_debug(f"Added date to dynamic playlist: {playlist_name}", Symbols.DATE)
+
+            # Step 2: Fetch tracks from Spotify
+            log_step_start("Fetching tracks from Spotify", 2, 4, f"Playlist: '{playlist_name}'")
+            start_time = time.time()
 
             # Get tracks from Spotify with proper error handling
             spotify_tracks = []
             try:
                 spotify_tracks = self.spotify_service.get_playlist_tracks(playlist_id)
-            except Exception as e:
-                logger.error(f"{thread_id}Error fetching tracks from Spotify: {e}")
-                print(f"• Error fetching tracks from Spotify: {e}")
 
-            if not spotify_tracks:
-                logger.warning(f"{thread_id}No tracks found in Spotify playlist '{playlist_name}'")
-                print(f"• No tracks found in Spotify playlist '{playlist_name}'")
+                if spotify_tracks:
+                    # Ensure a newline and log ONLY ONCE to console
+                    ensure_newline()
+                    with console_lock:
+                        print(f"  {Symbols.TRACKS} Found {len(spotify_tracks)} tracks on Spotify for '{playlist_name}'")
+                    log_step_end(
+                        "Fetch tracks",
+                        "completed",
+                        time.time() - start_time,
+                        f"Retrieved {len(spotify_tracks)} tracks",
+                        console_only=True
+                    )
+                else:
+                    log_warning(f"No tracks found in Spotify playlist '{playlist_name}'")
+                    log_step_end("Fetch tracks", "failed (no tracks found)", time.time() - start_time, console_only=True)
+                    return
+            except Exception as e:
+                # Check specifically for 404 errors
+                if "404" in str(e) or "not found" in str(e).lower():
+                    log_error(f"Playlist not found: '{playlist_id}'. It may have been deleted or made private.")
+                else:
+                    log_error(f"Error fetching tracks from Spotify: {e}")
+                log_step_end("Fetch tracks", "failed", time.time() - start_time, console_only=True)
                 return
 
-            logger.info(f"{thread_id}Found {len(spotify_tracks)} tracks on Spotify for '{playlist_name}'")
-            print(f"• Found {len(spotify_tracks)} tracks on Spotify for '{playlist_name}'")
-
-            # Step 2: Get cover art
-            print(f"• Getting cover art...")
-            logger.debug(f"{thread_id}Getting cover art...")
+            # Step 3: Get cover art (optional) - fix double logging here too
             cover_url = None
             try:
+                # Only log debug info, not info level to avoid double messages
+                log_debug(f"Getting cover art for playlist '{playlist_name}'...", Symbols.PLAYLIST)
                 cover_url = self.spotify_service.get_playlist_poster(playlist_id)
                 if cover_url:
-                    print(f"• Successfully retrieved cover art")
+                    log_debug(f"Retrieved cover art URL for '{playlist_name}'")
                 else:
-                    print(f"• No cover art found")
+                    log_debug(f"No cover art found for playlist '{playlist_name}'")
             except Exception as e:
-                logger.warning(f"{thread_id}Error getting cover art: {e}")
-                print(f"• Error getting cover art: {e}")
+                log_warning(f"Error getting cover art: {e}")
 
-            # Step 3: Match tracks in Plex
-            print(f"• Matching tracks in Plex (this may take a while)...")
-            logger.debug(f"{thread_id}Matching tracks in Plex...")
+            # Step 4: Match tracks in Plex
+            log_step_start("Matching tracks in Plex", 3, 4)
+            start_time = time.time()
+
+            # Track count for this playlist
+            track_count = len(spotify_tracks)
+
             plex_tracks = []
             try:
-                plex_tracks = self.plex_service.match_spotify_tracks_in_plex(spotify_tracks)
-            except Exception as e:
-                logger.error(f"{thread_id}Error matching tracks in Plex: {e}")
-                print(f"• Error matching tracks in Plex: {e}")
+                # Suppress unwanted output during track matching
+                old_stderr = sys.stderr
+                null_device = open(os.devnull, 'w')
+                try:
+                    sys.stderr = null_device
+                    plex_tracks = self.plex_service.match_spotify_tracks_in_plex(spotify_tracks)
+                finally:
+                    sys.stderr = old_stderr
+                    null_device.close()
 
-            if not plex_tracks:
-                logger.warning(
-                    f"{thread_id}No matching tracks found in Plex for playlist '{playlist_name}'",
-                )
-                print(f"• No matching tracks found in Plex for playlist '{playlist_name}'")
+                if plex_tracks:
+                    match_percentage = (len(plex_tracks) / track_count) * 100
+                    log_info(
+                        f"Matched {len(plex_tracks)}/{track_count} tracks "
+                        f"({match_percentage:.1f}%) in Plex for '{playlist_name}'",
+                        Symbols.SUCCESS, console_only=True
+                    )
+                    log_step_end("Match tracks", "completed", time.time() - start_time, console_only=True)
+                else:
+                    log_warning(f"No matching tracks found in Plex for playlist '{playlist_name}'")
+                    log_step_end("Match tracks", "failed (no matches)", time.time() - start_time, console_only=True)
+                    return
+            except Exception as e:
+                log_error(f"Error matching tracks in Plex: {e}")
+                log_step_end("Match tracks", "failed", time.time() - start_time, console_only=True)
                 return
 
-            match_percentage = (len(plex_tracks) / len(spotify_tracks)) * 100
-            logger.info(
-                f"{thread_id}Matched {len(plex_tracks)}/{len(spotify_tracks)} tracks in Plex for '{playlist_name}'"
-            )
-            print(f"• Matched {len(plex_tracks)}/{len(spotify_tracks)} tracks ({match_percentage:.1f}%) in Plex")
+            # Step 5: Create or update playlist in Plex
+            log_step_start("Creating/updating Plex playlist", 4, 4, f"Playlist: '{playlist_name}'")
+            start_time = time.time()
 
-            # Step 4: Create or update playlist in Plex
-            print(f"• Creating/updating playlist in Plex...")
-            logger.debug(f"{thread_id}Creating/updating playlist in Plex...")
             result = False
             try:
                 result = self.plex_service.create_or_update_playlist(
@@ -460,43 +625,37 @@ class SpotifyToPlex:
                     plex_tracks,
                     cover_url,
                 )
-            except Exception as e:
-                logger.error(f"{thread_id}Error creating/updating playlist: {e}")
-                print(f"• Error creating/updating playlist: {e}")
 
-            if result:
-                logger.info(
-                    f"{thread_id}Successfully processed playlist '{playlist_name}' with "
-                    f"{len(plex_tracks)} tracks",
-                )
-                print(f"• Success! Created/updated playlist '{playlist_name}' with {len(plex_tracks)} tracks")
-            else:
-                logger.error(f"{thread_id}Failed to create or update playlist '{playlist_name}'")
-                print(f"• Failed to create or update playlist '{playlist_name}'")
+                if result:
+                    # Only log to console to avoid duplication with log_step_end
+                    log_info(f"Successfully created/updated playlist '{playlist_name}' with {len(plex_tracks)} tracks",
+                             Symbols.SUCCESS, console_only=True)
+                    log_step_end("Create/update Plex playlist", "completed", time.time() - start_time, console_only=True)
+                else:
+                    log_error(f"Failed to create or update playlist '{playlist_name}'", Symbols.ERROR)
+                    log_step_end("Create/update Plex playlist", "failed", time.time() - start_time, console_only=True)
+                    return
+            except Exception as e:
+                log_error(f"Error creating/updating playlist: {e}")
+                log_step_end("Create/update Plex playlist", "failed", time.time() - start_time, console_only=True)
+                return
 
         except Exception as exc:
             logger.exception(f"Error processing playlist '{playlist}': {exc}")
-            print(f"• Error processing playlist: {exc}")
             raise
 
     @staticmethod
     def extract_playlist_id(playlist_url: str) -> str:
-        """Extract the Spotify playlist ID from a URL.
-
-        Args:
-            playlist_url: A URL or ID of the playlist.
-
-        Returns:
-            The extracted playlist ID.
-        """
-        # Remove query parameters
-        if "?" in playlist_url:
+        """Extract the Spotify playlist ID from a URL."""
+        # Remove query parameters if present
+        if playlist_url and "?" in playlist_url:
             playlist_url = playlist_url.split("?")[0]
 
         # Extract ID from URL format
-        playlist_match = re.search(r"playlist[/:]([a-zA-Z0-9]+)", playlist_url)
-        if playlist_match:
-            return playlist_match.group(1)
+        if playlist_url:
+            playlist_match = re.search(r"playlist[/:]([a-zA-Z0-9]+)", playlist_url)
+            if playlist_match:
+                return playlist_match.group(1)
 
         # If not a URL, assume it's already an ID
         return playlist_url

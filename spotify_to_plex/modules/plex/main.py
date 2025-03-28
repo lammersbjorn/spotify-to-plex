@@ -14,6 +14,7 @@ from plexapi.server import PlexServer
 
 from spotify_to_plex.config import Config
 from spotify_to_plex.utils.cache import cache_result
+from spotify_to_plex.utils.logging_utils import console_lock  # Add this import
 
 # Magic numbers as constants
 MAX_DISPLAY_MISSING = 10
@@ -119,6 +120,8 @@ class PlexClass:
         # Log warning if there are a lot of tracks to match
         if len(spotify_tracks) > 200:
             logger.warning(f"Large playlist with {len(spotify_tracks)} tracks may take a while to process")
+            # Also show this warning on console
+            print(f"\033[33m! Large playlist with {len(spotify_tracks)} tracks may take a while to process\033[0m")
 
         # Build the index only if we need it (more than 10 tracks to match)
         if len(spotify_tracks) > 10 and not self._track_index:
@@ -133,18 +136,30 @@ class PlexClass:
         # Use direct search for small playlists, index for larger ones
         use_index = len(self._track_index) > 0
 
+        # Add progress updates for large playlists
+        if len(spotify_tracks) > 100:
+            print(f"\033[36m> Processing tracks in batches. Please wait...\033[0m")
+
         # Process tracks in batches with progress reporting
         for i, (track_name, artist_name) in enumerate(spotify_tracks):
-            # Report progress every batch_size tracks
+            # Report progress every batch_size tracks with percentage and counts
             if i % batch_size == 0 and i > 0:
                 elapsed = time.time() - start_time
                 tracks_per_sec = i / elapsed if elapsed > 0 else 0
                 eta = (total_tracks - i) / tracks_per_sec if tracks_per_sec > 0 else "unknown"
                 eta_str = f"{eta:.1f}s" if isinstance(eta, float) else eta
+
+                # Log to file
                 logger.debug(
                     f"Matching progress: {i}/{total_tracks} tracks ({i/total_tracks*100:.1f}%), "
                     f"speed: {tracks_per_sec:.1f} tracks/sec, ETA: {eta_str}"
                 )
+
+                # Also show progress on console for large playlists
+                if len(spotify_tracks) > 100 and i % (batch_size * 5) == 0:
+                    with console_lock:
+                        pct = i/total_tracks*100
+                        print(f"\033[36m> Progress: {i}/{total_tracks} tracks ({pct:.1f}%), ETA: {eta_str}\033[0m")
 
             # Try to match the track
             track_found = False
