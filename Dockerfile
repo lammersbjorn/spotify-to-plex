@@ -30,7 +30,7 @@ RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=${POETRY_HOME} pyt
 
 # Copy dependency files and install production dependencies only
 COPY --chown=appuser:appuser pyproject.toml poetry.lock ./
-RUN poetry install --no-root --only=main
+RUN poetry install --only=main
 
 # Copy application code and entrypoint script
 COPY --chown=appuser:appuser spotify_to_plex/ ./spotify_to_plex/
