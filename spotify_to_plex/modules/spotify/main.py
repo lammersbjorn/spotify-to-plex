@@ -1,12 +1,16 @@
 """Module for interacting with the Spotify API."""
 
+import time
+from typing import List, Optional, Tuple, Any
 
+import httpx
 import spotipy
 from loguru import logger
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
 
 from spotify_to_plex.config import Config
+from spotify_to_plex.utils.cache import cache_result
 
 # HTTP status code constants
 HTTP_UNAUTHORIZED = 401
@@ -21,6 +25,7 @@ class SpotifyClass:
         """Initialize the Spotify client using Client ID and Client Secret from config."""
         self.spotify_id = Config.SPOTIFY_CLIENT_ID
         self.spotify_key = Config.SPOTIFY_CLIENT_SECRET
+        self.request_timeout = 30.0  # 30 second timeout for API calls
 
         if not self.spotify_id or not self.spotify_key:
             logger.warning(
@@ -43,14 +48,19 @@ class SpotifyClass:
             An authenticated Spotify client with application-level access.
         """
         try:
+            # Create a custom session for better timeout handling
+            session = httpx.Client(timeout=self.request_timeout)
+
             auth_manager = SpotifyClientCredentials(
                 client_id=self.spotify_id,
                 client_secret=self.spotify_key,
             )
-            spotify = spotipy.Spotify(auth_manager=auth_manager)
+            spotify = spotipy.Spotify(auth_manager=auth_manager, requests_session=session)
 
             # Test the connection with a simple public data request
+            logger.debug("Testing Spotify API connection...")
             spotify.search(q="test", limit=1, type="track")
+            logger.debug("Spotify API connection successful")
         except spotipy.exceptions.SpotifyException as e:
             logger.error(f"Failed to connect to Spotify API: {e}")
             if e.http_status == HTTP_UNAUTHORIZED:
@@ -76,6 +86,52 @@ class SpotifyClass:
             )
             return spotify
 
+    def _execute_with_retry(self, func: callable, *args, **kwargs) -> Any:
+        """Execute a function with retry logic for API calls.
+
+        Args:
+            func: The function to call
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            The result of the function call
+
+        Raises:
+            Exception: If all retries fail
+        """
+        max_retries = 3
+        retry_delay = 2
+
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except spotipy.exceptions.SpotifyException as e:
+                if e.http_status == HTTP_RATE_LIMIT:
+                    # Rate limited - wait longer on each retry
+                    wait_time = retry_delay * (attempt + 1)
+                    logger.warning(f"Rate limited by Spotify API. Waiting {wait_time}s before retry {attempt+1}/{max_retries}")
+                    time.sleep(wait_time)
+                    continue
+                elif attempt < max_retries - 1:
+                    # Other Spotify errors - retry with backoff
+                    wait_time = retry_delay * (attempt + 1)
+                    logger.warning(f"Spotify API error: {e}. Retrying in {wait_time}s ({attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Max retries reached
+                    logger.error(f"Spotify API error after {max_retries} attempts: {e}")
+                    raise
+            except Exception as e:
+                # Non-Spotify errors - don't retry
+                logger.error(f"Error calling Spotify API: {e}")
+                raise
+
+        # This should never be reached but just in case
+        raise Exception(f"Failed after {max_retries} attempts")
+
+    @cache_result(ttl=3600, use_disk=True)  # Cache for 1 hour using disk storage
     def get_playlist_tracks(
         self: "SpotifyClass",
         playlist_id: str,
@@ -90,11 +146,16 @@ class SpotifyClass:
         """
         tracks: list[tuple[str, str]] = []
         try:
-            results = self.sp.playlist_tracks(playlist_id)
+            # Use retry logic for API call
+            results = self._execute_with_retry(self.sp.playlist_tracks, playlist_id)
+
             total_tracks = results.get("total", 0)
             logger.debug(
                 f"Fetching {total_tracks} tracks from Spotify playlist {playlist_id}",
             )
+
+            # Track progress for large playlists
+            fetched_count = 0
 
             while results:
                 # Process current batch of tracks
@@ -114,8 +175,17 @@ class SpotifyClass:
                     )
                     tracks.append((track_name, artist_name))
 
-                # Get next batch if available
-                results = self.sp.next(results) if results.get("next") else None
+                fetched_count += len(results.get("items", []))
+
+                # Log progress for large playlists
+                if total_tracks > 100:
+                    logger.debug(f"Fetched {fetched_count}/{total_tracks} tracks from playlist")
+
+                # Get next batch if available - with retry
+                if results.get("next"):
+                    results = self._execute_with_retry(self.sp.next, results)
+                else:
+                    results = None
 
             logger.debug(
                 f"Retrieved {len(tracks)}/{total_tracks} tracks from Spotify playlist",
@@ -138,6 +208,7 @@ class SpotifyClass:
 
         return tracks
 
+    @cache_result(ttl=3600)  # Cache for 1 hour using memory
     def get_playlist_name(self: "SpotifyClass", playlist_id: str) -> str | None:
         """Retrieve the name of a Spotify playlist.
 
@@ -148,7 +219,11 @@ class SpotifyClass:
             The playlist name if available, else None.
         """
         try:
-            playlist_data = self.sp.playlist(playlist_id, fields="name")
+            playlist_data = self._execute_with_retry(
+                self.sp.playlist,
+                playlist_id,
+                fields="name"
+            )
             name = playlist_data.get("name")
             if name:
                 logger.debug(f"Retrieved playlist name: '{name}'")
@@ -173,6 +248,7 @@ class SpotifyClass:
         logger.warning(f"Playlist {playlist_id} has no name")
         return None
 
+    @cache_result(ttl=86400)  # Cache for 24 hours using memory (covers rarely change)
     def get_playlist_poster(self: "SpotifyClass", playlist_id: str) -> str | None:
         """Retrieve the cover art URL for a Spotify playlist.
 
@@ -183,7 +259,11 @@ class SpotifyClass:
             The cover art URL if found, else None.
         """
         try:
-            playlist_data = self.sp.playlist(playlist_id, fields="images")
+            playlist_data = self._execute_with_retry(
+                self.sp.playlist,
+                playlist_id,
+                fields="images"
+            )
 
             if playlist_data and playlist_data.get("images"):
                 image_url = playlist_data["images"][0].get("url")

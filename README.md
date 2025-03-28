@@ -33,9 +33,9 @@ Using Docker Compose is the easiest way to deploy Spotify to Plex.
          env_file:
             - .env
          restart: unless-stopped
-         # Uncomment the following if you want to persist cron logs:
-         # volumes:
-         #   - ./data:/app/logs
+         volumes:
+            - ./cache:/cache  # Persistent cache storage
+            - ./logs:/app/logs  # Persistent logs storage
     ```
 
 2.  Create an `.env` file by copying the example and editing it:
@@ -120,10 +120,12 @@ poetry run spotify-to-plex --help
 | `LIDARR_API_KEY`          | Lidarr API key                                         | -             | Only if `LIDARR_SYNC=true`       |
 | `LIDARR_API_URL`          | Lidarr server URL                                        | -             | Only if `LIDARR_SYNC=true`       |
 | `LIDARR_SYNC`             | Enable Lidarr sync                                     | `false`       | No                               |
-| `WORKER_COUNT`            | Concurrent threads                                     | `10`          | No                               |
-| `SECONDS_INTERVAL`        | Sleep interval (seconds)                               | `60`          | No                               |
+| `MAX_PARALLEL_PLAYLISTS`  | Maximum number of playlists to process in parallel     | `3`           | No                               |
 | `FIRST_RUN`               | Run sync at container start                            | `false`       | No                               |
 | `CRON_SCHEDULE`           | Schedule using cron syntax                             | `0 1 * * *`   | No                               |
+| `ENABLE_CACHE`            | Enable API response caching                            | `true`        | No                               |
+| `CACHE_TTL`               | Cache time-to-live in seconds                          | `3600`        | No                               |
+| `CACHE_DIR`               | Custom cache directory path                            | `~/.cache/spotify-to-plex` | No                |
 
 ## Usage
 
@@ -131,13 +133,19 @@ poetry run spotify-to-plex --help
 
 ```bash
 # Sync playlists from Lidarr
-poetry run spotify-to-plex sync-lidarr-imports
+poetry run spotify-to-plex sync-lidarr-imports [--parallel/--no-parallel] [--parallel-count N] [--clear-caches]
 
 # Sync manually specified playlists
-poetry run spotify-to-plex sync-manual-lists
+poetry run spotify-to-plex sync-manual-lists [--parallel/--no-parallel] [--parallel-count N] [--clear-caches]
 
 # Sync a specific playlist by ID
-poetry run spotify-to-plex sync-playlist 37i9dQZEVXcJZyENOWUFo7
+poetry run spotify-to-plex sync-playlist PLAYLIST_ID [--clear-caches]
+
+# Clear cache
+poetry run spotify-to-plex clear-caches
+
+# Run diagnostics
+poetry run spotify-to-plex diagnose
 
 # Show help
 poetry run spotify-to-plex --help
@@ -148,6 +156,9 @@ poetry run spotify-to-plex --help
 ```bash
 # Run manual sync
 docker exec spotify-to-plex poetry run spotify-to-plex sync-manual-lists
+
+# Run diagnostics
+docker exec spotify-to-plex poetry run spotify-to-plex diagnose
 
 # View logs
 docker logs spotify-to-plex
@@ -172,6 +183,11 @@ docker compose up -d
 *   **Adding tracks**: By default, new tracks are added to existing playlists
 *   **Replacing playlists**: Set `PLEX_REPLACE=true` to delete and recreate playlists on each sync
 
+### Performance Tuning
+
+*   **Parallel Processing**: Control with `--parallel/--no-parallel` and `--parallel-count N` options
+*   **Caching**: Configure with `ENABLE_CACHE` and `CACHE_TTL` environment variables
+
 ### Scheduling
 
 Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
@@ -179,6 +195,15 @@ Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
 *   Every 6 hours: `0 */6 * * *`
 *   Every Monday at midnight: `0 0 * * 1`
 *   Every 30 minutes: `*/30 * * * *`
+
+### Docker Cache and Logs
+
+The Docker container is configured with two volume mounts:
+
+* `/cache`: Stores API response cache data for faster performance between restarts
+* `/app/logs`: Stores log files from the automated sync jobs
+
+You can mount these to local directories using the `volumes` directive in your docker-compose.yaml file.
 
 ## Troubleshooting
 
@@ -197,22 +222,24 @@ Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
 
     *   Check your API credentials in the `.env` file
     *   Ensure the Spotify application has the necessary permissions
+4.  **Processing gets stuck at 0%**
+
+    *   Run with `--no-parallel` to process playlists sequentially
+    *   Try using the `diagnose` command to check connections
+    *   Clear caches with `clear-caches` command
+
+### Diagnostic Tools
+
+Run the diagnostic command to check connections and configuration:
+
+```bash
+poetry run spotify-to-plex diagnose
+```
 
 ### Logs
 
 *   Docker: `docker logs spotify-to-plex`
 *   Python: Check `spotify_to_plex.log` in the application directory
-
-### Code Quality
-
-```bash
-# Run tests
-poetry run pytest
-
-# Lint and format
-poetry run ruff check .
-poetry run ruff format .
-```
 
 ## License
 

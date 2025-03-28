@@ -7,12 +7,16 @@ echo "Running with Poetry $(poetry --version)"
 echo "Using cron schedule: ${CRON_SCHEDULE}"
 
 # Create logs directory if it doesn't exist
-mkdir -p ${SRC_DIR}/logs
+mkdir -p ${LOGS_DIR}
+# Create cache directory if it doesn't exist
+mkdir -p ${CACHE_DIR}
+# Ensure correct permissions
+chown -R appuser:appuser ${CACHE_DIR} ${LOGS_DIR}
 
 # Create a crontab file
 echo "# Spotify to Plex sync crontab" > /tmp/crontab
-echo "${CRON_SCHEDULE} cd ${SRC_DIR} && echo \$(date '+[%Y-%m-%d %H:%M:%S]') && poetry run spotify-to-plex sync-lidarr-imports >> ${SRC_DIR}/logs/lidarr_sync.log 2>&1" >> /tmp/crontab
-echo "${CRON_SCHEDULE} cd ${SRC_DIR} && echo \$(date '+[%Y-%m-%d %H:%M:%S]') && poetry run spotify-to-plex sync-manual-lists >> ${SRC_DIR}/logs/manual_sync.log 2>&1" >> /tmp/crontab
+echo "${CRON_SCHEDULE} cd ${SRC_DIR} && echo \$(date '+[%Y-%m-%d %H:%M:%S]') && poetry run spotify-to-plex sync-lidarr-imports >> ${LOGS_DIR}/lidarr_sync.log 2>&1" >> /tmp/crontab
+echo "${CRON_SCHEDULE} cd ${SRC_DIR} && echo \$(date '+[%Y-%m-%d %H:%M:%S]') && poetry run spotify-to-plex sync-manual-lists >> ${LOGS_DIR}/manual_sync.log 2>&1" >> /tmp/crontab
 
 # Run initial sync if FIRST_RUN is enabled
 if [[ "${FIRST_RUN}" == "True" || "${FIRST_RUN}" == "true" || "${FIRST_RUN}" == "1" ]]; then

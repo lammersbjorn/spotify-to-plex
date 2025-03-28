@@ -14,7 +14,9 @@ ENV SRC_DIR="/app" \
     POETRY_VIRTUALENVS_IN_PROJECT=true \
     POETRY_NO_INTERACTION=1 \
     CRON_SCHEDULE="@daily" \
-    DOCKER="True"
+    DOCKER="True" \
+    CACHE_DIR="/cache" \
+    LOGS_DIR="/app/logs"
 
 # Accept commit SHA as a build argument
 ARG COMMIT_SHA="development"
@@ -22,8 +24,8 @@ ENV COMMIT_SHA=${COMMIT_SHA}
 
 # Create a non-root user and working directory
 RUN groupadd -r appuser && useradd -r -g appuser -d ${SRC_DIR} appuser \
-    && mkdir -p ${SRC_DIR} \
-    && chown -R appuser:appuser ${SRC_DIR}
+    && mkdir -p ${SRC_DIR} ${CACHE_DIR} ${LOGS_DIR} \
+    && chown -R appuser:appuser ${SRC_DIR} ${CACHE_DIR} ${LOGS_DIR}
 
 WORKDIR ${SRC_DIR}
 
@@ -62,6 +64,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Log the commit SHA during the build
 RUN echo "Built from commit SHA: ${COMMIT_SHA}"
+
+# Create volume mount points
+VOLUME ["${CACHE_DIR}", "${LOGS_DIR}"]
 
 # Switch to non-root user for better security
 USER appuser

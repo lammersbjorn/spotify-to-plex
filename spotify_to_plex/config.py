@@ -40,8 +40,20 @@ class Config:
     )
 
     # Performance settings
-    WORKER_COUNT = int(os.environ.get("WORKER_COUNT", "10"))
+    # Note: WORKER_COUNT is deprecated, use MAX_PARALLEL_PLAYLISTS instead
+    MAX_PARALLEL_PLAYLISTS = int(os.environ.get("MAX_PARALLEL_PLAYLISTS", "3"))
     SECONDS_INTERVAL = int(os.environ.get("SECONDS_INTERVAL", "60"))
+
+    # Caching configuration
+    ENABLE_CACHE = os.environ.get("ENABLE_CACHE", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+        "t",
+        "y",
+    )
+    CACHE_TTL = int(os.environ.get("CACHE_TTL", "3600"))  # Default: 1 hour
+    CACHE_DIR = os.environ.get("CACHE_DIR", "")  # Custom cache directory
 
     # Playlist configuration
     MANUAL_PLAYLISTS = os.environ.get("MANUAL_PLAYLISTS", "")
@@ -79,5 +91,8 @@ class Config:
 
         if not cls.LIDARR_SYNC and not cls.MANUAL_PLAYLISTS:
             warnings.append("No playlists configured for sync")
+
+        if cls.MAX_PARALLEL_PLAYLISTS > 5:
+            warnings.append(f"High parallelism ({cls.MAX_PARALLEL_PLAYLISTS}) may cause rate limiting")
 
         return warnings
