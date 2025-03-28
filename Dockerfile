@@ -21,7 +21,7 @@ WORKDIR ${SRC_DIR}
 
 # Install system and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-       curl wget ca-certificates build-essential \
+       curl wget ca-certificates build-essential cargo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
