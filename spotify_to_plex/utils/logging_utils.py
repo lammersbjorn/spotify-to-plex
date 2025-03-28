@@ -214,6 +214,11 @@ class ProgressBar:
 			filled_length = int(self.length * self.current // self.total)
 			bar = "#" * filled_length + "-" * (self.length - filled_length)
 
+			if not sys.stdout.isatty():
+				with console_lock:
+					print(f"{spinner_char} {self.prefix} [{bar}] {percent:.1f}% ({self.current}/{self.total}) {self.suffix}")
+				return
+
 			with console_lock:
 				if not self._line_active:
 					sys.stdout.write("\n")
