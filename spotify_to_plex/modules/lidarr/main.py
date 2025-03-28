@@ -2,7 +2,7 @@
 
 import time
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Optional
 
 import httpx
 from loguru import logger
@@ -21,8 +21,8 @@ class LidarrClass:
         """Initialize Lidarr connection using configuration."""
         self.url: str = Config.LIDARR_API_URL
         self.api_key: str = Config.LIDARR_API_KEY
-        self.headers: Dict[str, str] = {"X-Api-Key": self.api_key}
-        self._playlist_cache: Optional[List[List[str]]] = None
+        self.headers: dict[str, str] = {"X-Api-Key": self.api_key}
+        self._playlist_cache: Optional[list[list[str]]] = None
         self._last_fetch_time = 0
         self._cache_ttl = 3600  # Cache TTL in seconds (1 hour)
 
@@ -30,7 +30,7 @@ class LidarrClass:
         self.client = httpx.Client(
             headers=self.headers,
             timeout=30.0,
-            verify=False  # nosec - Allow self-signed certificates for local instances
+            verify=False,  # nosec - Allow self-signed certificates for local instances
         )
 
         if not self.url or self.api_key == "":
@@ -42,7 +42,7 @@ class LidarrClass:
     def lidarr_request(
         self: "LidarrClass",
         endpoint_path: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[dict[str, Any]]:
         """Make a generic request to the Lidarr API with retry logic.
 
         Args:
@@ -64,41 +64,47 @@ class LidarrClass:
                 wait_time = RETRY_DELAY * (attempt + 1)
                 logger.warning(
                     f"Network error during Lidarr API call (attempt {attempt+1}/{MAX_RETRIES}). "
-                    f"Retrying in {wait_time}s: {e}"
+                    f"Retrying in {wait_time}s: {e}",
                 )
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(wait_time)
                 else:
-                    logger.exception(f"Network error during Lidarr API call after {MAX_RETRIES} attempts: {e}")
+                    logger.exception(
+                        f"Network error during Lidarr API call after {MAX_RETRIES} attempts: {e}"
+                    )
                     return None
 
             except httpx.HTTPStatusError as e:
                 wait_time = RETRY_DELAY * (attempt + 1)
                 logger.warning(
                     f"HTTP status error {e.response.status_code} during Lidarr API call "
-                    f"(attempt {attempt+1}/{MAX_RETRIES}). Retrying in {wait_time}s: {e}"
+                    f"(attempt {attempt+1}/{MAX_RETRIES}). Retrying in {wait_time}s: {e}",
                 )
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(wait_time)
                 else:
-                    logger.exception(f"HTTP status error during Lidarr API call after {MAX_RETRIES} attempts: {e}")
+                    logger.exception(
+                        f"HTTP status error during Lidarr API call after {MAX_RETRIES} attempts: {e}"
+                    )
                     return None
 
             except Exception as e:
                 wait_time = RETRY_DELAY * (attempt + 1)
                 logger.warning(
                     f"Unexpected error during Lidarr API call (attempt {attempt+1}/{MAX_RETRIES}). "
-                    f"Retrying in {wait_time}s: {e}"
+                    f"Retrying in {wait_time}s: {e}",
                 )
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(wait_time)
                 else:
-                    logger.exception(f"Unexpected error during Lidarr API call after {MAX_RETRIES} attempts: {e}")
+                    logger.exception(
+                        f"Unexpected error during Lidarr API call after {MAX_RETRIES} attempts: {e}"
+                    )
                     return None
 
         return None
 
-    def playlist_request(self: "LidarrClass") -> List[List[str]]:
+    def playlist_request(self: "LidarrClass") -> list[list[str]]:
         """Request and process playlists from Lidarr with caching.
 
         Returns:
@@ -122,11 +128,13 @@ class LidarrClass:
             logger.warning("No playlists data received from Lidarr")
             return []
 
-        spotify_playlists: List[List[str]] = []
+        spotify_playlists: list[list[str]] = []
 
         for entry in raw_playlists:
             if entry.get("listType") != "spotify":
-                logger.debug(f"Skipping non-Spotify import list type: {entry.get('listType', 'unknown')}")
+                logger.debug(
+                    f"Skipping non-Spotify import list type: {entry.get('listType', 'unknown')}"
+                )
                 continue
 
             name = entry.get("name", "Unknown List")
@@ -138,7 +146,7 @@ class LidarrClass:
                     if playlist_ids:
                         spotify_playlists.append(playlist_ids)
                         logger.debug(
-                            f"Found {len(playlist_ids)} Spotify playlist IDs in Lidarr list '{name}': {playlist_ids}"
+                            f"Found {len(playlist_ids)} Spotify playlist IDs in Lidarr list '{name}': {playlist_ids}",
                         )
 
         if not spotify_playlists:

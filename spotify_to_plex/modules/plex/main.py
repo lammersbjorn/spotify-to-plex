@@ -3,7 +3,7 @@
 import datetime
 import time
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional
 
 import httpx
 from loguru import logger
@@ -29,8 +29,8 @@ class PlexClass:
         self.plex_url = Config.PLEX_SERVER_URL
         self.plex_token = Config.PLEX_TOKEN
         self.replacement_policy = Config.PLEX_REPLACE
-        self._track_cache: Dict[str, List[Track]] = {}
-        self._playlist_cache: Dict[str, Playlist] = {}
+        self._track_cache: dict[str, list[Track]] = {}
+        self._playlist_cache: dict[str, Playlist] = {}
 
         if not self.plex_url or not self.plex_token:
             logger.warning("Plex credentials not properly configured")
@@ -62,12 +62,14 @@ class PlexClass:
                 # Test connection by accessing account
                 _ = server.myPlexAccount()
                 logger.debug(
-                    f"Successfully connected to Plex server: {server.friendlyName}"
+                    f"Successfully connected to Plex server: {server.friendlyName}",
                 )
                 return server
 
             except Unauthorized:
-                logger.error("Failed to connect to Plex: Unauthorized. Check your token.")
+                logger.error(
+                    "Failed to connect to Plex: Unauthorized. Check your token."
+                )
                 raise  # Authorization errors won't be fixed by retrying
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
@@ -76,7 +78,7 @@ class PlexClass:
                 retry_seconds = RETRY_DELAY * attempt
                 logger.warning(
                     f"Connection to Plex failed (attempt {attempt}/{MAX_RETRIES}). "
-                    f"Retrying in {retry_seconds}s: {str(e)}"
+                    f"Retrying in {retry_seconds}s: {e!s}",
                 )
                 time.sleep(retry_seconds)
 
@@ -92,7 +94,7 @@ class PlexClass:
         raise ConnectionError("Failed to connect to Plex server")
 
     @lru_cache(maxsize=32)
-    def _search_artist(self, music_library, artist_name: str) -> List:
+    def _search_artist(self, music_library, artist_name: str) -> list:
         """Search for an artist in the music library with caching.
 
         Args:
@@ -110,8 +112,8 @@ class PlexClass:
 
     def match_spotify_tracks_in_plex(
         self: "PlexClass",
-        spotify_tracks: List[Tuple[str, str]],
-    ) -> List[Track]:
+        spotify_tracks: list[tuple[str, str]],
+    ) -> list[Track]:
         """Match Spotify tracks in the Plex music library with improved performance.
 
         Args:
@@ -121,13 +123,15 @@ class PlexClass:
             List of matched Plex Track objects.
         """
         logger.info(f"Matching {len(spotify_tracks)} Spotify tracks in Plex")
-        matched_tracks: List[Track] = []
-        missing_tracks: List[Tuple[str, str]] = []
+        matched_tracks: list[Track] = []
+        missing_tracks: list[tuple[str, str]] = []
         total_tracks = len(spotify_tracks)
         start_time = time.time()
 
         # Cache key for tracks
-        cache_key = ":".join([f"{artist}|{track}" for track, artist in spotify_tracks[:5]])
+        cache_key = ":".join(
+            [f"{artist}|{track}" for track, artist in spotify_tracks[:5]]
+        )
         if cache_key in self._track_cache:
             logger.info("Using cached track results")
             return self._track_cache[cache_key]
@@ -142,7 +146,7 @@ class PlexClass:
             return []
 
         artist_cache = {}  # Cache for search results per artist
-        track_cache = {}   # Cache for direct track searches
+        track_cache = {}  # Cache for direct track searches
 
         # Group tracks by artist to reduce API calls
         tracks_by_artist = {}
@@ -154,7 +158,9 @@ class PlexClass:
         # Process each artist
         for artist_name, track_names in tracks_by_artist.items():
             if artist_name not in artist_cache:
-                artist_cache[artist_name] = self._search_artist(music_library, artist_name)
+                artist_cache[artist_name] = self._search_artist(
+                    music_library, artist_name
+                )
 
             artist_results = artist_cache[artist_name]
 
@@ -175,7 +181,9 @@ class PlexClass:
                         if track_lower not in artist_tracks:
                             artist_tracks[track_lower] = track
                 except Exception as exc:
-                    logger.debug(f"Error accessing tracks for artist '{artist_name}': {exc}")
+                    logger.debug(
+                        f"Error accessing tracks for artist '{artist_name}': {exc}"
+                    )
 
             # Match each track name against the retrieved tracks
             for track_name in track_names:
@@ -194,7 +202,7 @@ class PlexClass:
                             track_cache[search_key] = results[0] if results else None
                         except Exception as exc:
                             logger.debug(
-                                f"Error in direct search for '{track_name}' by '{artist_name}': {exc}"
+                                f"Error in direct search for '{track_name}' by '{artist_name}': {exc}",
                             )
                             track_cache[search_key] = None
 
@@ -208,11 +216,13 @@ class PlexClass:
             self._track_cache[cache_key] = matched_tracks
 
         duration = time.time() - start_time
-        success_percentage = (len(matched_tracks) / total_tracks) * 100 if total_tracks > 0 else 0
+        success_percentage = (
+            (len(matched_tracks) / total_tracks) * 100 if total_tracks > 0 else 0
+        )
 
         logger.info(
             f"Matched {len(matched_tracks)}/{total_tracks} tracks "
-            f"({success_percentage:.2f}%) in {duration:.2f} seconds"
+            f"({success_percentage:.2f}%) in {duration:.2f} seconds",
         )
 
         if missing_tracks:
@@ -220,7 +230,7 @@ class PlexClass:
             logger.debug(
                 f"First {display_count} missing tracks: "
                 f"{missing_tracks[:display_count]}"
-                f"{'...' if len(missing_tracks) > display_count else ''}"
+                f"{'...' if len(missing_tracks) > display_count else ''}",
             )
 
         return matched_tracks
@@ -241,24 +251,28 @@ class PlexClass:
         for attempt in range(MAX_RETRIES):
             try:
                 playlist.uploadPoster(url=cover_url)
-                logger.debug(f"Successfully set cover art for playlist '{playlist.title}'")
+                logger.debug(
+                    f"Successfully set cover art for playlist '{playlist.title}'"
+                )
                 return True
             except Exception as exc:
                 logger.warning(
                     f"Attempt {attempt+1}/{MAX_RETRIES} failed to set cover art "
-                    f"for playlist '{playlist.title}': {exc}"
+                    f"for playlist '{playlist.title}': {exc}",
                 )
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(RETRY_DELAY)
 
-        logger.error(f"Failed to set cover art for playlist '{playlist.title}' after {MAX_RETRIES} attempts")
+        logger.error(
+            f"Failed to set cover art for playlist '{playlist.title}' after {MAX_RETRIES} attempts"
+        )
         return False
 
     def create_playlist(
         self: "PlexClass",
         playlist_name: str,
         playlist_id: str,
-        tracks: List[Track],
+        tracks: list[Track],
         cover_url: Optional[str],
     ) -> Optional[Playlist]:
         """Create a new Plex playlist with the specified tracks.
@@ -280,7 +294,7 @@ class PlexClass:
 
             logger.debug(
                 f"Creating new playlist '{playlist_name}' with "
-                f"{len(initial_tracks)} initial tracks"
+                f"{len(initial_tracks)} initial tracks",
             )
 
             new_playlist = self.plex.createPlaylist(playlist_name, items=initial_tracks)
@@ -299,9 +313,9 @@ class PlexClass:
 
             # Add remaining tracks in chunks
             for chunk_num, i in enumerate(range(0, len(remaining_tracks), CHUNK_SIZE)):
-                chunk = remaining_tracks[i:i+CHUNK_SIZE]
+                chunk = remaining_tracks[i : i + CHUNK_SIZE]
                 logger.debug(
-                    f"Adding chunk {chunk_num+1} with {len(chunk)} more tracks to playlist '{playlist_name}'"
+                    f"Adding chunk {chunk_num+1} with {len(chunk)} more tracks to playlist '{playlist_name}'",
                 )
                 new_playlist.addItems(chunk)
                 # Brief pause between chunks to avoid overwhelming the server
@@ -309,7 +323,9 @@ class PlexClass:
 
         except BadRequest as e:
             if "already exists" in str(e).lower():
-                logger.error(f"Playlist '{playlist_name}' already exists. Please use update instead.")
+                logger.error(
+                    f"Playlist '{playlist_name}' already exists. Please use update instead."
+                )
                 return None
             logger.exception(f"Bad request creating playlist '{playlist_name}': {e}")
             return None
@@ -318,7 +334,7 @@ class PlexClass:
             return None
         else:
             logger.info(
-                f"Successfully created playlist '{playlist_name}' with {len(tracks)} tracks"
+                f"Successfully created playlist '{playlist_name}' with {len(tracks)} tracks",
             )
             # Cache the new playlist
             self._playlist_cache[playlist_name] = new_playlist
@@ -328,7 +344,7 @@ class PlexClass:
         self: "PlexClass",
         existing_playlist: Playlist,
         playlist_id: str,
-        tracks: List[Track],
+        tracks: list[Track],
         cover_url: Optional[str],
     ) -> Optional[Playlist]:
         """Update an existing Plex playlist with new tracks.
@@ -348,7 +364,7 @@ class PlexClass:
             # If replacement policy is enabled, delete and recreate
             if self.replacement_policy:
                 logger.debug(
-                    f"Deleting existing playlist '{existing_playlist.title}' for replacement"
+                    f"Deleting existing playlist '{existing_playlist.title}' for replacement",
                 )
                 existing_playlist.delete()
                 # Clear from cache
@@ -380,31 +396,41 @@ class PlexClass:
             if tracks:
                 # Get existing tracks to avoid duplicates
                 try:
-                    existing_tracks = {track.ratingKey: track for track in existing_playlist.items()}
+                    existing_tracks = {
+                        track.ratingKey: track for track in existing_playlist.items()
+                    }
                     logger.debug(f"Playlist has {len(existing_tracks)} existing tracks")
 
                     # Filter out tracks that already exist in the playlist
-                    new_tracks = [track for track in tracks if track.ratingKey not in existing_tracks]
-                    logger.debug(f"Adding {len(new_tracks)} new tracks to playlist (filtered {len(tracks) - len(new_tracks)} duplicates)")
+                    new_tracks = [
+                        track
+                        for track in tracks
+                        if track.ratingKey not in existing_tracks
+                    ]
+                    logger.debug(
+                        f"Adding {len(new_tracks)} new tracks to playlist (filtered {len(tracks) - len(new_tracks)} duplicates)"
+                    )
 
                     # Add new tracks in chunks
                     for i in range(0, len(new_tracks), CHUNK_SIZE):
-                        chunk = new_tracks[i:i+CHUNK_SIZE]
+                        chunk = new_tracks[i : i + CHUNK_SIZE]
                         if chunk:
                             existing_playlist.addItems(chunk)
                             time.sleep(0.5)  # Brief pause between chunks
 
                 except Exception as e:
-                    logger.warning(f"Error filtering duplicates, adding all tracks: {e}")
+                    logger.warning(
+                        f"Error filtering duplicates, adding all tracks: {e}"
+                    )
                     # Fallback to adding all tracks if filtering fails
                     for i in range(0, len(tracks), CHUNK_SIZE):
-                        chunk = tracks[i:i+CHUNK_SIZE]
+                        chunk = tracks[i : i + CHUNK_SIZE]
                         existing_playlist.addItems(chunk)
                         time.sleep(0.5)  # Brief pause between chunks
 
         except Exception as exc:
             logger.exception(
-                f"Error updating playlist '{existing_playlist.title}': {exc}"
+                f"Error updating playlist '{existing_playlist.title}': {exc}",
             )
             return None
         else:
@@ -413,7 +439,9 @@ class PlexClass:
             self._playlist_cache[existing_playlist.title] = existing_playlist
             return existing_playlist
 
-    def find_playlist_by_name(self: "PlexClass", playlist_name: str) -> Optional[Playlist]:
+    def find_playlist_by_name(
+        self: "PlexClass", playlist_name: str
+    ) -> Optional[Playlist]:
         """Find a Plex playlist by name with caching.
 
         Args:
@@ -446,7 +474,7 @@ class PlexClass:
         self: "PlexClass",
         playlist_name: str,
         playlist_id: str,
-        tracks: List[Track],
+        tracks: list[Track],
         cover_url: Optional[str],
     ) -> Optional[Playlist]:
         """Create or update a Plex playlist based on whether it exists already.

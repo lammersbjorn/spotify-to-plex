@@ -1,17 +1,15 @@
 """Entry point for Typer application."""
 
+import logging
 import os
 import sys
 import time
-import logging
-from pathlib import Path
-from typing import Optional
 from contextlib import contextmanager
+from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
 from loguru import logger
-from rich import print
 from rich.console import Console
 
 # Get the directory containing the script
@@ -22,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
 # Silence the spotipy logger to avoid duplicate 404 errors
-spotipy_logger = logging.getLogger('spotipy.client')
+spotipy_logger = logging.getLogger("spotipy.client")
 spotipy_logger.setLevel(logging.CRITICAL)  # Only show critical errors, not 404s
 
 # Set Spotipy environment variables based on your config
@@ -43,10 +41,16 @@ if not os.path.exists(LOG_DIR):
     try:
         os.makedirs(LOG_DIR)
     except Exception as e:
-        console.print(f"[yellow]⚠️  Warning:[/yellow] Could not create logs directory: {e}")
+        console.print(
+            f"[yellow]⚠️  Warning:[/yellow] Could not create logs directory: {e}"
+        )
 
 # Default log file
-LOG_FILE = os.path.join(LOG_DIR, "spotify_to_plex.log") if os.path.exists(LOG_DIR) else "spotify_to_plex.log"
+LOG_FILE = (
+    os.path.join(LOG_DIR, "spotify_to_plex.log")
+    if os.path.exists(LOG_DIR)
+    else "spotify_to_plex.log"
+)
 
 # Store the ID of our console logger for pausing
 console_logger_id = None
@@ -58,10 +62,16 @@ if not VERSION or VERSION == "unknown":
     # Try to get version from git if running locally
     try:
         import subprocess
-        VERSION = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+
+        VERSION = (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+            .decode()
+            .strip()
+        )
     except Exception:
         # Use the version from config as last resort
         VERSION = Config.SPOTIFY_TO_PLEX_VERSION
+
 
 # Function to disable stderr logging during progress bar display
 @contextmanager
@@ -79,16 +89,17 @@ def pause_console_logging():
             console_logger_id = logger.add(
                 sys.stderr,
                 level="INFO",
-                format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+                format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
             )
+
 
 # Configure logger
 logger.remove()  # Remove default handler
 logger.add(
     LOG_FILE,
-    rotation="10 MB",    # Rotate when file reaches 10MB
+    rotation="10 MB",  # Rotate when file reaches 10MB
     retention="7 days",  # Keep logs for 7 days
-    compression="zip",   # Compress rotated logs
+    compression="zip",  # Compress rotated logs
     level="DEBUG",
     backtrace=True,
     diagnose=True,
@@ -97,7 +108,7 @@ logger.add(
 console_logger_id = logger.add(
     sys.stderr,
     level="INFO",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
 )
 
 logger.debug("spotify_to_plex v{}", VERSION)
@@ -109,11 +120,12 @@ logger.debug(
 # Create Typer app with custom help
 app = typer.Typer(
     help="Sync Spotify playlists to Plex Media Server",
-    add_completion=False
+    add_completion=False,
 )
 
 # Health check state
 last_health_status = {"status": "unknown", "timestamp": 0}
+
 
 @app.command()
 def sync_lidarr_imports() -> None:
@@ -128,11 +140,13 @@ def sync_lidarr_imports() -> None:
 
     try:
         with pause_console_logging():
-            sp_instance = sp_module.SpotifyToPlex(lidarr=True, playlist_id=None, console=console)
+            sp_instance = sp_module.SpotifyToPlex(
+                lidarr=True, playlist_id=None, console=console
+            )
             sp_instance.run()
     except Exception as e:
         logger.exception(f"Unhandled error in sync_lidarr_imports: {e}")
-        console.print(f"[bold red]❌ Error:[/bold red] {str(e)}")
+        console.print(f"[bold red]❌ Error:[/bold red] {e!s}")
         sys.exit(1)
 
 
@@ -149,11 +163,13 @@ def sync_manual_lists() -> None:
 
     try:
         with pause_console_logging():
-            sp_instance = sp_module.SpotifyToPlex(lidarr=False, playlist_id=None, console=console)
+            sp_instance = sp_module.SpotifyToPlex(
+                lidarr=False, playlist_id=None, console=console
+            )
             sp_instance.run()
     except Exception as e:
         logger.exception(f"Unhandled error in sync_manual_lists: {e}")
-        console.print(f"[bold red]❌ Error:[/bold red] {str(e)}")
+        console.print(f"[bold red]❌ Error:[/bold red] {e!s}")
         sys.exit(1)
 
 
@@ -173,11 +189,13 @@ def sync_playlist(
 
     try:
         with pause_console_logging():
-            sp_instance = sp_module.SpotifyToPlex(lidarr=False, playlist_id=playlist_id, console=console)
+            sp_instance = sp_module.SpotifyToPlex(
+                lidarr=False, playlist_id=playlist_id, console=console
+            )
             sp_instance.run()
     except Exception as e:
         logger.exception(f"Unhandled error in sync_playlist: {e}")
-        console.print(f"[bold red]❌ Error:[/bold red] {str(e)}")
+        console.print(f"[bold red]❌ Error:[/bold red] {e!s}")
         sys.exit(1)
 
 
@@ -199,6 +217,7 @@ def healthcheck() -> None:
         # Check Spotify connection
         console.print("• Checking Spotify API connection... ", end="")
         from spotify_to_plex.modules.spotify.main import SpotifyClass
+
         spotify = SpotifyClass()
         test_result = spotify.sp.search(q="test", limit=1, type="track")
         if test_result and test_result.get("tracks"):
@@ -210,6 +229,7 @@ def healthcheck() -> None:
         # Check Plex connection
         console.print("• Checking Plex API connection... ", end="")
         from spotify_to_plex.modules.plex.main import PlexClass
+
         plex = PlexClass()
         sections = plex.plex.library.sections()
         if sections is not None:
@@ -241,12 +261,12 @@ def healthcheck() -> None:
         # Update cache
         last_health_status = {
             "status": status,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
     except Exception as e:
         logger.exception(f"Error in healthcheck: {e}")
-        console.print(f"[bold red]❌ Error:[/bold red] {str(e)}")
+        console.print(f"[bold red]❌ Error:[/bold red] {e!s}")
         sys.exit(1)
 
 

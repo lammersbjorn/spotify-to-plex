@@ -2,8 +2,7 @@
 
 import logging
 import os
-import socket
-from typing import Dict, List
+
 
 class Config:
     """Application configuration loaded from environment variables."""
