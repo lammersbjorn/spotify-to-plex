@@ -47,7 +47,7 @@ RUN curl -fsSL -o /usr/local/bin/supercronic https://github.com/aptible/supercro
 COPY --chown=appuser:appuser pyproject.toml poetry.lock ./
 
 # Install dependencies only - this layer will be cached unless dependencies change
-RUN poetry install --no-root --no-dev
+RUN poetry install --no-root --without dev
 
 # Copy application code
 COPY --chown=appuser:appuser spotify_to_plex/ ./spotify_to_plex/
