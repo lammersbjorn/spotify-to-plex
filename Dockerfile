@@ -75,7 +75,7 @@ WORKDIR ${SRC_DIR}
 # Copy built application from builder stage
 COPY --from=builder ${SRC_DIR} ${SRC_DIR}
 COPY --from=builder /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY --from=builder ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
+COPY --from=builder /opt/poetry/bin/poetry /usr/local/bin/poetry
 
 # Define volume mount points
 VOLUME ["${CACHE_DIR}", "${LOGS_DIR}"]
