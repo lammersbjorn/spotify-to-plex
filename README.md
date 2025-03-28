@@ -28,14 +28,19 @@ Using Docker Compose is the easiest way to deploy Spotify to Plex.
     ```yaml
     services:
       spotify-to-plex:
-         image: ghcr.io/lammersbjorn/spotify-to-plex:latest
-         container_name: spotify-to-plex
-         env_file:
-            - .env
-         restart: unless-stopped
-         # Uncomment the following if you want to persist cron logs:
-         # volumes:
-         #   - ./data:/app/logs
+        image: ghcr.io/lammersbjorn/spotify-to-plex:latest
+        container_name: spotify-to-plex
+        env_file:
+          - .env
+        restart: unless-stopped
+        volumes:
+          - ./data:/app/logs
+        healthcheck:
+          test: ["CMD", "poetry", "run", "spotify-to-plex", "healthcheck"]
+          interval: 1h
+          timeout: 10s
+          retries: 3
+          start_period: 30
     ```
 
 2.  Create an `.env` file by copying the example and editing it:
@@ -189,6 +194,9 @@ Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
     *   This usually means the playlist no longer exists or is inaccessible
     *   Check if the playlist ID is correct and still public/accessible
     *   For Spotify-generated playlists, see the important notice about API changes
+    *   The application will automatically mark unavailable playlists to avoid repeated lookups
+    *   **Note about Spotify API changes:** As of November 27, 2024, Spotify's API no longer allows access to Spotify-generated playlists like Daily Mix, Discover Weekly, and others. If you're seeing many 404 errors, you may need to update your playlist IDs in the configuration.
+
 2.  **No tracks found in Plex**
 
     *   Ensure music files are properly tagged with correct metadata
