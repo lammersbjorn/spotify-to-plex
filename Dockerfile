@@ -1,4 +1,3 @@
-# Use a specific Python version for better reproducibility
 FROM python:3.11-slim-bullseye
 
 # Set metadata labels
@@ -34,12 +33,14 @@ RUN apt-get update \
        curl \
        wget \
        ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    # Install Poetry
-    && curl -sSL https://install.python-poetry.org | python3 - \
-    && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry \
-    # Install supercronic
-    && wget -q -O /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/download/v0.1.20/supercronic-linux-amd64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=${POETRY_HOME} python3 - --version ${POETRY_VERSION} \
+    && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
+
+# Install supercronic
+RUN wget -q -O /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/download/v0.1.20/supercronic-linux-amd64 \
     && chmod +x /usr/local/bin/supercronic
 
 # Copy configuration files first to leverage layer caching
