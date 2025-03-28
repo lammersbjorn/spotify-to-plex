@@ -55,19 +55,19 @@ Spotify to Plex is a tool that automatically synchronizes your user-created Spot
     ```
 
 Alternatively, use these Docker commands:
-    ```bash
-    # Pull the latest image
-    docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
+```bash
+# Pull the latest image
+docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
 
-    # Create a configuration file
-    curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
+# Create a configuration file
+curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
 
-    # Edit the configuration file
-    nano .env
+# Edit the configuration file
+nano .env
 
-    # Run the container
-    docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
-    ```
+# Run the container
+docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
+```
 
 ### 2. Local Python Installation
 
