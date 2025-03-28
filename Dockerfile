@@ -28,12 +28,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=${POETRY_HOME} python3 - --version ${POETRY_VERSION} \
     && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
 
-# Copy dependency files (including README.md) and install production dependencies only
+# First copy dependency files and application code
 COPY --chown=appuser:appuser pyproject.toml poetry.lock README.md ./
+COPY --chown=appuser:appuser spotify_to_plex/ ./spotify_to_plex/
+
+# Then install dependencies (including the root project)
 RUN poetry install --only=main
 
-# Copy application code and entrypoint script
-COPY --chown=appuser:appuser spotify_to_plex/ ./spotify_to_plex/
+# Copy entrypoint script
 COPY --chown=appuser:appuser entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
