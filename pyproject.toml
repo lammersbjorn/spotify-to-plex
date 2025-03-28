@@ -29,6 +29,10 @@ pytest-cov = "^4.1.0"
 [tool.poetry.scripts]
 spotify-to-plex = "spotify_to_plex.main:app"
 
+[tool.poetry.packages]
+name = "spotify_to_plex"
+include = "spotify_to_plex"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
