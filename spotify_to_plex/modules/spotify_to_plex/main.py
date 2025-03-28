@@ -1,6 +1,7 @@
 """Main module for syncing Spotify to Plex playlists."""
 
 import re
+import concurrent.futures
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -113,15 +114,19 @@ class SpotifyToPlex:
             return
 
         logger.info(
-            f"Starting sync process for {len(self.sync_lists)} playlists "
-            f"and {len(self.user_list)} users",
+            f"Starting sync process for {len(self.sync_lists)} playlists and {len(self.user_list)} users",
         )
 
-        # Simple progress tracking with a single progress bar
-        for i, user in enumerate(self.user_list):
-            print(f"\nProcessing user {i+1}/{len(self.user_list)}: {user}")
-            self.process_for_user(user)
-            print(f"Completed user {i+1}/{len(self.user_list)}: {user}")
+        # Process users concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.user_list)) as executor:
+            futures = {executor.submit(self.process_for_user, user): user for user in self.user_list}
+            for future in concurrent.futures.as_completed(futures):
+                user = futures[future]
+                try:
+                    future.result()
+                    print(f"Completed user: {user}")
+                except Exception as exc:
+                    logger.exception(f"Error processing user {user}: {exc}")
 
         print("\n✅ Sync process completed!")
         logger.info("Sync process completed")
