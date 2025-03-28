@@ -54,7 +54,7 @@ COPY --chown=appuser:appuser spotify_to_plex/ ./spotify_to_plex/
 COPY --chown=appuser:appuser README.md ./
 
 # Install the application
-RUN poetry install --no-dev
+RUN poetry install --without dev
 
 # Copy entrypoint script
 COPY --chown=appuser:appuser entrypoint.sh /usr/local/bin/
