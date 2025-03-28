@@ -11,14 +11,14 @@ mkdir -p ${SRC_DIR}/logs
 
 # Create a crontab file
 echo "# Spotify to Plex sync crontab" > /tmp/crontab
-echo "${CRON_SCHEDULE} cd ${SRC_DIR} && poetry run spotify_to_plex sync-lidarr-imports >> ${SRC_DIR}/logs/lidarr_sync.log 2>&1" >> /tmp/crontab
-echo "${CRON_SCHEDULE} cd ${SRC_DIR} && poetry run spotify_to_plex sync-manual-lists >> ${SRC_DIR}/logs/manual_sync.log 2>&1" >> /tmp/crontab
+echo "${CRON_SCHEDULE} cd ${SRC_DIR} && poetry run spotify-to-plex sync-lidarr-imports >> ${SRC_DIR}/logs/lidarr_sync.log 2>&1" >> /tmp/crontab
+echo "${CRON_SCHEDULE} cd ${SRC_DIR} && poetry run spotify-to-plex sync-manual-lists >> ${SRC_DIR}/logs/manual_sync.log 2>&1" >> /tmp/crontab
 
 # Run initial sync if FIRST_RUN is enabled
 if [[ "${FIRST_RUN}" == "True" || "${FIRST_RUN}" == "true" || "${FIRST_RUN}" == "1" ]]; then
     echo "Running initial sync as requested by FIRST_RUN setting"
-    poetry run spotify_to_plex sync-lidarr-imports
-    poetry run spotify_to_plex sync-manual-lists
+    poetry run spotify-to-plex sync-lidarr-imports
+    poetry run spotify-to-plex sync-manual-lists
 fi
 
 # Start the cron daemon
