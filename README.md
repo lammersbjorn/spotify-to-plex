@@ -17,7 +17,41 @@ Synchronize Spotify playlists to your Plex Media Server automatically.
 
 ## Installation
 
+Choose your preferred installation method: Docker (recommended) or Python.
+
 ### Docker (Recommended)
+
+Using Docker Compose is the easiest way to deploy Spotify to Plex.
+
+1.  Create a `docker-compose.yaml` file:
+
+    ```yaml
+    services:
+      spotify-to-plex:
+         image: ghcr.io/lammersbjorn/spotify-to-plex:latest
+         container_name: spotify-to-plex
+         env_file:
+            - .env
+         restart: unless-stopped
+         # Uncomment the following if you want to persist cron logs:
+         # volumes:
+         #   - ./data:/app/logs
+    ```
+
+2.  Create an `.env` file by copying the example and editing it:
+
+    ```bash
+    curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
+    nano .env
+    ```
+
+3.  Start the service using Docker Compose:
+
+    ```bash
+    docker compose up -d
+    ```
+
+Alternatively, you can use the following Docker commands:
 
 ```bash
 # Pull the latest image
