@@ -83,58 +83,57 @@ class PlexClass:
             logger.error(f"Failed to access Music library in Plex: {exc}")
             return []
 
-        for track_name, artist_name in spotify_tracks:
-            try:
-                # First try to find the artist
-                artist_results = music_library.search(title=artist_name)
+        artist_cache = {}  # Cache for search results per artist
 
-                if not artist_results:
-                    missing_tracks.append((track_name, artist_name))
+        for track_name, artist_name in spotify_tracks:
+            if artist_name not in artist_cache:
+                try:
+                    artist_cache[artist_name] = music_library.search(title=artist_name)
+                except Exception as exc:
+                    logger.debug(f"Error searching for artist '{artist_name}': {exc}")
+                    artist_cache[artist_name] = []
+            artist_results = artist_cache[artist_name]
+
+            if not artist_results:
+                missing_tracks.append((track_name, artist_name))
+                continue
+
+            track_found = False
+            for artist_item in artist_results:
+                try:
+                    tracks = artist_item.tracks()
+                    for track in tracks:
+                        # Case insensitive matching
+                        if track.title.lower() == track_name.lower():
+                            matched_tracks.append(track)
+                            track_found = True
+                            break
+                except Exception as exc:
+                    logger.debug(
+                        f"Error accessing tracks for artist '{artist_name}': {exc}",
+                    )
                     continue
 
-                # Look for the track within the artist's tracks
-                track_found = False
-                for artist_item in artist_results:
-                    try:
-                        tracks = artist_item.tracks()
-                        for track in tracks:
-                            # Case insensitive matching
-                            if track.title.lower() == track_name.lower():
-                                matched_tracks.append(track)
-                                track_found = True
-                                break
-                    except Exception as exc:
-                        logger.debug(
-                            f"Error accessing tracks for artist '{artist_name}': {exc}",
-                        )
-                        continue
+                if track_found:
+                    break
 
-                    if track_found:
-                        break
+            if not track_found:
+                # Try a more direct search as fallback
+                try:
+                    direct_results = music_library.searchTracks(
+                        title=track_name,
+                        artist=artist_name,
+                    )
+                    if direct_results:
+                        matched_tracks.append(direct_results[0])
+                        track_found = True
+                except Exception as exc:
+                    logger.debug(
+                        "Error in direct search for "
+                        f"'{track_name}' by '{artist_name}': {exc}",
+                    )
 
-                if not track_found:
-                    # Try a more direct search as fallback
-                    try:
-                        direct_results = music_library.searchTracks(
-                            title=track_name,
-                            artist=artist_name,
-                        )
-                        if direct_results:
-                            matched_tracks.append(direct_results[0])
-                            track_found = True
-                    except Exception as exc:
-                        logger.debug(
-                            "Error in direct search for "
-                            f"'{track_name}' by '{artist_name}': {exc}",
-                        )
-
-                if not track_found:
-                    missing_tracks.append((track_name, artist_name))
-
-            except Exception as exc:
-                logger.debug(
-                    f"Error finding track '{track_name}' by '{artist_name}': {exc}",
-                )
+            if not track_found:
                 missing_tracks.append((track_name, artist_name))
 
         success_percentage = (
