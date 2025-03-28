@@ -5,6 +5,13 @@ services:
     env_file:
       - .env
     restart: unless-stopped
-    # Uncomment the following if you want to persist cron logs:
-    # volumes:
-    #   - ./data:/app/logs
+    volumes:
+      - ./cache:/cache # Persist cache data
+      - ./logs:/app/logs # Persist logs
+    healthcheck:
+      test: ["CMD", "poetry", "run", "spotify-to-plex", "diagnose"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
+    user: appuser

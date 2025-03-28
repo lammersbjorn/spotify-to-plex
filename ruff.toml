@@ -1,5 +1,89 @@
+# Select all available rules by default
 select = ["ALL"]
+# Target Python 3.10
 target-version = "py310"
 
+# Exclude a variety of commonly ignored directories
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+# Ignore specific errors or warnings
+ignore = [
+    # Allow non-abstract empty methods in abstract base classes
+    "B027",
+    # Allow boolean positional values in function calls, like `dict.get(x, False)`
+    "FBT003",
+    # Ignore complexity warnings (handled separately by McCabe)
+    "C901",
+    # Allow assert statements (useful for tests and runtime validation)
+    "S101",
+    # TODO comments are fine
+    "FIX002",
+    # Disable rules that conflict with formatter when using tabs
+    "COM812",  # Missing trailing comma
+    "ISC001",  # Conflicts with formatter
+    "W191",    # Indentation contains tabs (we want tabs)
+    "D206",    # Docstring should expand tabs (conflicts with tab indentation)
+]
+
+# Allow autofix for all enabled rules (when `--fix` is provided)
+fixable = ["ALL"]
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Match Black's default line length
+line-length = 88
+
+[isort]
+known-first-party = ["spotify_to_plex"]
+# Configure for compatibility with Black
+force-single-line = false
+force-sort-within-sections = true
+combine-as-imports = true
+split-on-trailing-comma = true
+
+# Google style docstrings
 [pydocstyle]
 convention = "google"
+
+# Allow autofix for all enabled rules (when `--fix` is provided)
+[format]
+quote-style = "double"
+indent-style = "tab"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# McCabe complexity checker
+[mccabe]
+# Flag complex functions (default: 10)
+max-complexity = 10
+
+# Per-file-ignores
+[per-file-ignores]
+# Tests can use magic values, assertions, etc.
+"tests/**/*" = ["PLR2004", "S101", "TID252"]
+# Type stubs can use magic values
+"**/*.pyi" = ["PLR2004"]
+# Init files often import things unused in that file
+"__init__.py" = ["F401"]

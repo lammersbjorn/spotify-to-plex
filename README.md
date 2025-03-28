@@ -1,92 +1,98 @@
 # Spotify to Plex
 
-[![Docker Build](https://github.com/lammersbjorn/spotify-to-plex/actions/workflows/docker-image.yml/badge.svg)](https://github.com/lammersbjorn/spotify-to-plex/actions/workflows/docker-image.yml)
+Spotify to Plex is a tool that automatically synchronizes your user-created Spotify playlists with your Plex Media Server. It supports:
+- Parallel processing for faster playlist updates.
+- Importing playlists from Lidarr or manual input.
+- Preserving cover art and metadata.
+- Running on Docker or as a standalone Python app.
 
-Synchronize Spotify playlists to your Plex Media Server automatically.
+> **Important Notice:** As of November 27, 2024, the Spotify API no longer allows access to Spotify‑generated playlists (e.g. Daily Mix, Discover Weekly). Only user‑created playlists are supported.
 
-> **Important Notice:** As of November 27, 2024, Spotify API no longer allows access to Spotify-generated playlists, including Daily Mix, Discover Weekly, and other Spotify-owned content. See [Spotify's announcement](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api) for details. User-created playlists remain fully accessible.
+## Prerequisites & Dependencies
 
-## Features
-
-- Sync Spotify playlists to Plex for multiple users
-- Import playlists from Lidarr or specify them manually
-- Preserve Spotify playlist cover art
-- Scheduled automatic synchronization
-- Parallel processing for improved performance
-- Docker support for easy deployment
+- **Spotify Developer Account:** Create an app to obtain your Client ID and Client Secret.
+- **Plex Server:** Obtain your Plex token from [Plex Support](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).
+- **Lidarr (Optional):** For Lidarr playlist imports, configure the API key and URL.
+- **Python 3.10+** or later.
+- **Docker** (if you choose the containerized deployment).
 
 ## Installation
 
-Choose your preferred installation method: Docker (recommended) or Python.
+### 1. Docker (Recommended)
 
-### Docker (Recommended)
+#### Using Docker Compose
 
-Using Docker Compose is the easiest way to deploy Spotify to Plex.
-
-1.  Create a `docker-compose.yaml` file:
-
+1. Create a `docker-compose.yaml` file:
     ```yaml
     services:
       spotify-to-plex:
-         image: ghcr.io/lammersbjorn/spotify-to-plex:latest
-         container_name: spotify-to-plex
-         env_file:
-            - .env
-         restart: unless-stopped
-         volumes:
-            - ./cache:/cache  # Persistent cache storage
-            - ./logs:/app/logs  # Persistent logs storage
+        image: ghcr.io/lammersbjorn/spotify-to-plex:latest
+        container_name: spotify-to-plex
+        env_file:
+          - .env
+        restart: unless-stopped
+        volumes:
+          - ./cache:/cache # Persist cache data
+          - ./logs:/app/logs # Persist logs
+        healthcheck:
+          test: ["CMD", "poetry", "run", "spotify-to-plex", "diagnose"]
+          interval: 1m
+          timeout: 10s
+          retries: 3
+          start_period: 1m
+        user: appuser
     ```
 
-2.  Create an `.env` file by copying the example and editing it:
-
+2. Create an `.env` file:
     ```bash
     curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
     nano .env
     ```
 
-3.  Start the service using Docker Compose:
-
+3. Start the service:
     ```bash
     docker compose up -d
     ```
 
-Alternatively, you can use the following Docker commands:
+Alternatively, use these Docker commands:
+    ```bash
+    # Pull the latest image
+    docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
 
-```bash
-# Pull the latest image
-docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
+    # Create a configuration file
+    curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
 
-# Create a configuration file
-curl -o .env https://raw.githubusercontent.com/lammersbjorn/spotify-to-plex/main/.env.example
+    # Edit the configuration file
+    nano .env
 
-# Edit the configuration file
-nano .env
+    # Run the container
+    docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
+    ```
 
-# Run the container
-docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
-```
+### 2. Local Python Installation
 
-### Python Installation
+1. Install Poetry:
+    ```bash
+    curl -sSL https://install.python-poetry.org | python3 -
+    ```
 
-```bash
-# Install Poetry
-curl -sSL https://install.python-poetry.org | python3 -
+2. Clone the repository and install dependencies:
+    ```bash
+    git clone https://github.com/lammersbjorn/spotify-to-plex.git
+    cd spotify-to-plex
+    poetry install
+    ```
 
-# Clone repository
-git clone https://github.com/lammersbjorn/spotify-to-plex.git
-cd spotify-to-plex
+3. Configure the application:
+    ```bash
+    cp .env.example .env
+    nano .env
+    ```
 
-# Install dependencies
-poetry install
-
-# Configure
-cp .env.example .env
-nano .env
-
-# Run
-poetry run spotify-to-plex --help
-```
+4. Run the application help:
+    ```bash
+    poetry run spotify-to-plex --help
+    ```
 
 ## Configuration
 
@@ -131,45 +137,51 @@ poetry run spotify-to-plex --help
 
 ### Command Line Interface
 
-```bash
-# Sync playlists from Lidarr
-poetry run spotify-to-plex sync-lidarr-imports [--parallel/--no-parallel] [--parallel-count N] [--clear-caches]
+- **Sync playlists from Lidarr:**
+    ```bash
+    poetry run spotify-to-plex sync-lidarr-imports [--parallel/--no-parallel] [--parallel-count N] [--clear-caches]
+    ```
 
-# Sync manually specified playlists
-poetry run spotify-to-plex sync-manual-lists [--parallel/--no-parallel] [--parallel-count N] [--clear-caches]
+- **Sync manually specified playlists:**
+    ```bash
+    poetry run spotify-to-plex sync-manual-lists [--parallel/--no-parallel] [--parallel-count N] [--clear-caches]
+    ```
 
-# Sync a specific playlist by ID
-poetry run spotify-to-plex sync-playlist PLAYLIST_ID [--clear-caches]
+- **Sync a specific playlist by ID:**
+    ```bash
+    poetry run spotify-to-plex sync-playlist PLAYLIST_ID [--clear-caches]
+    ```
 
-# Clear cache
-poetry run spotify-to-plex clear-caches
+- **Clear caches:**
+    ```bash
+    poetry run spotify-to-plex clear-caches
+    ```
 
-# Run diagnostics
-poetry run spotify-to-plex diagnose
-
-# Show help
-poetry run spotify-to-plex --help
-```
+- **Run diagnostics:**
+    ```bash
+    poetry run spotify-to-plex diagnose
+    ```
 
 ### Docker Commands
 
-```bash
-# Run manual sync
-docker exec spotify-to-plex poetry run spotify-to-plex sync-manual-lists
+- **Manual sync:**
+    ```bash
+    docker exec spotify-to-plex poetry run spotify-to-plex sync-manual-lists
+    ```
 
-# Run diagnostics
-docker exec spotify-to-plex poetry run spotify-to-plex diagnose
+- **View logs:**
+    ```bash
+    docker logs spotify-to-plex
+    ```
 
-# View logs
-docker logs spotify-to-plex
+- **Updating the container:**
+    ```bash
+    docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
+    docker rm -f spotify-to-plex
+    docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
+    ```
 
-# Update container
-docker pull ghcr.io/lammersbjorn/spotify-to-plex:latest
-docker rm -f spotify-to-plex
-docker run -d --name spotify-to-plex --env-file .env ghcr.io/lammersbjorn/spotify-to-plex:latest
-```
-
-To update the container when using Docker Compose:
+Or, if using Docker Compose:
 
 ```bash
 docker compose pull
@@ -179,72 +191,60 @@ docker compose up -d
 ## Advanced Configuration
 
 ### Playlist Management
-
-*   **Adding tracks**: By default, new tracks are added to existing playlists
-*   **Replacing playlists**: Set `PLEX_REPLACE=true` to delete and recreate playlists on each sync
+- **Adding Tracks:** New tracks are added to existing playlists.
+- **Replacing Playlists:** Set `PLEX_REPLACE=true` in your `.env` to have playlists deleted and recreated on each sync.
 
 ### Performance Tuning
-
-*   **Parallel Processing**: Control with `--parallel/--no-parallel` and `--parallel-count N` options
-*   **Caching**: Configure with `ENABLE_CACHE` and `CACHE_TTL` environment variables
+- **Parallel Processing:** Adjust the `--parallel` and `--parallel-count` options.
+- **Caching:** Enable caching with `ENABLE_CACHE` and adjust `CACHE_TTL` (in seconds) in your `.env` file.
 
 ### Scheduling
-
-Set `CRON_SCHEDULE` using [crontab syntax](https://crontab.guru/):
-
-*   Every 6 hours: `0 */6 * * *`
-*   Every Monday at midnight: `0 0 * * 1`
-*   Every 30 minutes: `*/30 * * * *`
+- Set `CRON_SCHEDULE` (default is `0 1 * * *`) in your `.env` using standard cron syntax:
+  - Every 6 hours: `0 */6 * * *`
+  - Every Monday at midnight: `0 0 * * 1`
+  - Every 30 minutes: `*/30 * * * *`
 
 ### Docker Cache and Logs
-
-The Docker container is configured with two volume mounts:
-
-* `/cache`: Stores API response cache data for faster performance between restarts
-* `/app/logs`: Stores log files from the automated sync jobs
-
-You can mount these to local directories using the `volumes` directive in your docker-compose.yaml file.
+- **Cache:** Stored under `/cache` (persisted via Docker volume).
+- **Logs:** Found in `/app/logs` (configure your host paths in Docker Compose as desired).
 
 ## Troubleshooting
 
 ### Common Issues
 
-1.  **404 Not Found Errors**
+1. **404 Not Found Errors:**
+   - Verify the playlist ID is correct and the playlist is public.
+   - Remember that generated playlists (e.g. Discover Weekly) are no longer available via Spotify API.
 
-    *   This usually means the playlist no longer exists or is inaccessible
-    *   Check if the playlist ID is correct and still public/accessible
-    *   For Spotify-generated playlists, see the important notice about API changes
-2.  **No tracks found in Plex**
+2. **No Tracks in Plex:**
+   - Ensure that your music files are correctly tagged.
+   - Confirm Plex has indexed your library.
 
-    *   Ensure music files are properly tagged with correct metadata
-    *   Verify Plex has indexed your music library
-3.  **API Authentication Errors**
+3. **API Authentication Errors:**
+   - Double-check your API credentials in `.env`.
+   - Ensure the Spotify application has proper permissions.
 
-    *   Check your API credentials in the `.env` file
-    *   Ensure the Spotify application has the necessary permissions
-4.  **Processing gets stuck at 0%**
-
-    *   Run with `--no-parallel` to process playlists sequentially
-    *   Try using the `diagnose` command to check connections
-    *   Clear caches with `clear-caches` command
+4. **Processing Stalls (0%):**
+   - Try using the `--no-parallel` option.
+   - Run the `diagnose` command to examine connections.
+   - Consider clearing caches with `clear-caches`.
 
 ### Diagnostic Tools
 
-Run the diagnostic command to check connections and configuration:
-
+Run the diagnostics to verify Spotify and Plex connections, cache status, and configuration integrity:
 ```bash
 poetry run spotify-to-plex diagnose
 ```
 
 ### Logs
 
-*   Docker: `docker logs spotify-to-plex`
-*   Python: Check `spotify_to_plex.log` in the application directory
+- **Docker:** Use `docker logs spotify-to-plex`.
+- **Local:** Check the log file (`spotify_to_plex.log` or logs under `/app/logs`).
 
 ## License
 
-GPL-3.0 License - see the LICENSE file for details.
+GPL-3.0 License — see the LICENSE file for details.
 
 ---
 
-**Disclaimer**: This project is not affiliated with or endorsed by Spotify or Plex. Use in accordance with both services' terms of use.
+**Disclaimer:** This project is not affiliated with or endorsed by Spotify or Plex. Use this tool in accordance with the terms of use of each service.
