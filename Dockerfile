@@ -76,6 +76,7 @@ WORKDIR ${SRC_DIR}
 COPY --from=builder ${SRC_DIR} ${SRC_DIR}
 COPY --from=builder /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=builder /opt/poetry/bin/poetry /usr/local/bin/poetry
+RUN chmod +x /usr/local/bin/poetry
 
 # Define volume mount points
 VOLUME ["${CACHE_DIR}", "${LOGS_DIR}"]
