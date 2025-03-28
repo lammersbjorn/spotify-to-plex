@@ -1,0 +1,10 @@
+services:
+  spotify-to-plex:
+    image: ghcr.io/lammersbjorn/spotify-to-plex:latest
+    container_name: spotify-to-plex
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Uncomment the following if you want to persist cron logs:
+    # volumes:
+    #   - ./data:/app/logs
