@@ -54,6 +54,8 @@ ENV SRC_DIR="/app" \
     CRON_SCHEDULE="0 1 * * *" \
     FIRST_RUN="false" \
     PYTHONUNBUFFERED=1
+COPY --from=builder /opt/poetry /opt/poetry
+ENV PATH="/opt/poetry/bin:$PATH"
 
 # Install supercronic for scheduled tasks
 ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64
@@ -75,8 +77,6 @@ WORKDIR ${SRC_DIR}
 # Copy built application from builder stage
 COPY --from=builder ${SRC_DIR} ${SRC_DIR}
 COPY --from=builder /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY --from=builder /opt/poetry/bin/poetry /usr/local/bin/poetry
-RUN chmod +x /usr/local/bin/poetry
 
 # Define volume mount points
 VOLUME ["${CACHE_DIR}", "${LOGS_DIR}"]
