@@ -40,7 +40,7 @@ RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=${POETRY_HOME} pyt
     && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
 
 # Install supercronic
-RUN wget -q -O /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/download/v0.1.20/supercronic-linux-amd64 \
+RUN curl -fsSL -o /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64 \
     && chmod +x /usr/local/bin/supercronic
 
 # Copy configuration files first to leverage layer caching
