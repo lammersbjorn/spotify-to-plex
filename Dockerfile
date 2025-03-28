@@ -17,7 +17,8 @@ ENV SRC_DIR="/app" \
     DOCKER="True"
 
 # Accept commit SHA as a build argument
-ARG COMMIT_SHA="development"
+# This will be automatically set by GitHub Actions during build
+ARG COMMIT_SHA="unknown"
 ENV COMMIT_SHA=${COMMIT_SHA}
 
 # Create a non-root user and working directory

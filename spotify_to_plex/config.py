@@ -2,13 +2,14 @@
 
 import logging
 import os
-
+import socket
+from typing import Dict, List
 
 class Config:
     """Application configuration loaded from environment variables."""
 
-    # Version information
-    SPOTIFY_TO_PLEX_VERSION = os.environ.get("COMMIT_SHA", "0.0.1")
+    # Version information - dynamically set during build
+    SPOTIFY_TO_PLEX_VERSION = "v2.1.0"  # Default version as fallback
 
     # Spotify API configuration
     # Spotify Client Secret (keep this secure)
