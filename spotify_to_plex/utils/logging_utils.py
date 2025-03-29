@@ -349,22 +349,40 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs") -> None:
     root_logger.setLevel(logging.INFO)  # Set appropriate level
 
 
-def draw_box(text: str, padding: int = 2, extra_width: int = 0) -> tuple[str, str, str]:
+def draw_box(text: str, padding: int = 2, width: int = 50, align: str = "left", extra_width: int = 0) -> tuple[str, str, str]:
     """Draw a box around the provided text.
 
     Args:
         text (str): Text to enclose in a box.
         padding (int, optional): Horizontal padding. Defaults to 2.
-        extra_width (int, optional): Additional width to be added. Defaults to 0.
+        width (int, optional): Fixed width for the box content. Defaults to 50.
+        align (str, optional): Text alignment - "left", "center", or "right". Defaults to "left".
+        extra_width (int, optional): Additional width (legacy parameter). Defaults to 0.
 
     Returns:
         Tuple[str, str, str]: The top border, content line, and bottom border.
     """
     text_width = len(text)
-    box_width = text_width + (padding * 2) + extra_width
-    top_border = f"┏{'━' * box_width}┓"
-    content_line = f"┃{' ' * padding}{text}{' ' * (padding + extra_width)}┃"
-    bottom_border = f"┗{'━' * box_width}┛"
+
+    # Add extra_width for backward compatibility
+    if extra_width > 0:
+        width += extra_width
+
+    # Calculate text positioning
+    if align == "center":
+        left_space = (width - text_width) // 2
+        right_space = width - text_width - left_space
+    elif align == "right":
+        left_space = width - text_width - padding
+        right_space = padding
+    else:  # left alignment
+        left_space = padding
+        right_space = width - text_width - left_space
+
+    top_border = f"┏{'━' * width}┓"
+    content_line = f"┃{' ' * left_space}{text}{' ' * right_space}┃"
+    bottom_border = f"┗{'━' * width}┛"
+
     return top_border, content_line, bottom_border
 
 
@@ -552,7 +570,8 @@ def log_header(message: str) -> None:
             sys.stdout.write("\n")
             sys.stdout.flush()
 
-    top, content, bottom = draw_box(header, padding=4, extra_width=2)
+    # Updated to use the new draw_box signature without extra_width parameter
+    top, content, bottom = draw_box(header, padding=4)
     with console_lock:
         sys.stdout.write(f"{Colors.HEADER}{top}\n{content}\n{bottom}{Colors.RESET}\n")
         sys.stdout.flush()
