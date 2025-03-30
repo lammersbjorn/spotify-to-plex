@@ -60,9 +60,12 @@ class PlexClass:
 
 			# Set the urllib3 warning filter to ignore insecure request warnings
 			import urllib3
+
 			urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-			logger.debug(f"Connecting to Plex server at {self.plex_url} (SSL verification disabled)")
+			logger.debug(
+				f"Connecting to Plex server at {self.plex_url} (SSL verification disabled)"
+			)
 			server = PlexServer(self.plex_url, self.plex_token, session=session)
 		except Unauthorized:
 			logger.error("Failed to connect to Plex: Unauthorized. Check your token.")

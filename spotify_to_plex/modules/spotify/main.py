@@ -6,6 +6,7 @@ Google‑style docstrings and comprehensive type hints.
 """
 
 from collections.abc import Callable
+import logging
 import time
 from typing import Any, Optional, TypeVar
 
@@ -14,7 +15,6 @@ from loguru import logger
 import spotipy
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyClientCredentials
-import logging
 
 from spotify_to_plex.config import Config
 from spotify_to_plex.utils.cache import cache_result
@@ -114,7 +114,11 @@ class SpotifyClass:
 					if hasattr(e, "headers") and e.headers:
 						retry_after = e.headers.get("Retry-After")
 					try:
-						wait_time = int(retry_after) if retry_after is not None else BASE_RETRY_DELAY * (attempt + 1)
+						wait_time = (
+							int(retry_after)
+							if retry_after is not None
+							else BASE_RETRY_DELAY * (attempt + 1)
+						)
 					except Exception:
 						wait_time = BASE_RETRY_DELAY * (attempt + 1)
 					logger.warning(
@@ -132,7 +136,9 @@ class SpotifyClass:
 					time.sleep(wait_time)
 					continue
 				else:
-					logger.error(f"Spotify API error after {MAX_RETRIES} attempts (code {e.http_status})")
+					logger.error(
+						f"Spotify API error after {MAX_RETRIES} attempts (code {e.http_status})"
+					)
 					raise
 			except (httpx.TimeoutException, httpx.ConnectError) as e:
 				last_exception = e
@@ -181,7 +187,9 @@ class SpotifyClass:
 				)
 				return None
 			else:
-				logger.warning(f"Error accessing Spotify playlist '{playlist_id}': code {getattr(e, 'http_status', 'unknown')}")
+				logger.warning(
+					f"Error accessing Spotify playlist '{playlist_id}': code {getattr(e, 'http_status', 'unknown')}"
+				)
 				raise
 		except Exception as exc:
 			logger.warning(f"Error retrieving playlist name for ID {playlist_id}")
@@ -253,9 +261,13 @@ class SpotifyClass:
 					"It may have been deleted or made private."
 				)
 			else:
-				logger.warning(f"Error accessing Spotify playlist {playlist_id}: code {getattr(e, 'http_status', 'unknown')}")
+				logger.warning(
+					f"Error accessing Spotify playlist {playlist_id}: code {getattr(e, 'http_status', 'unknown')}"
+				)
 		except Exception as exc:
-			logger.warning(f"Error fetching tracks from Spotify for playlist {playlist_id}")
+			logger.warning(
+				f"Error fetching tracks from Spotify for playlist {playlist_id}"
+			)
 			logger.debug(f"Exception details: {type(exc).__name__}: {exc}")
 
 		return tracks
@@ -300,7 +312,9 @@ class SpotifyClass:
 					"It may have been deleted or made private."
 				)
 			else:
-				logger.warning(f"Error accessing Spotify playlist {playlist_id}: code {getattr(e, 'http_status', 'unknown')}")
+				logger.warning(
+					f"Error accessing Spotify playlist {playlist_id}: code {getattr(e, 'http_status', 'unknown')}"
+				)
 			return None
 		except Exception as exc:
 			logger.warning(f"Error retrieving cover art for playlist {playlist_id}")
