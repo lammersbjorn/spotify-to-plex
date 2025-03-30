@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "spotify_to_plex"
-version = "3.1.0"
+version = "3.1.1"
 description = "Sync Spotify playlists to Plex Media Server"
 authors = ["lammersbjorn <bjorn@lammers.media>", "0xChloe <chloe@catastrophesoftware.com>"]
 license = "GPLv3"
